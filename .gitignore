@@ -10,8 +10,14 @@ wheels/
 # Virtual environments
 .venv
 
+# Data
+data/raw
+
 # Custom
 .planning/
-data
 *.7z
 *.npz
+*.zip
+
+# Codegraph
+.codegraph

@@ -1,5 +1,0 @@
---nrows 150000
---
-
-SimpleRun1_9, 0 adversaries, 0 attacks
-scale1_9
