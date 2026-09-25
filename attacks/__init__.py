@@ -13,6 +13,6 @@ from attacks.a3_spectral_matching import SpectralMatching
 
 __all__ = [
     "OracleWhiteBoxPGD",
-    "TemporalGrinding",
     "SpectralMatching",
+    "TemporalGrinding",
 ]

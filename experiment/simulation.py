@@ -2,31 +2,31 @@
 Simulation Launcher using flwr.simulation.start_simulation()
 """
 
-from typing import Dict, Any, Optional
-import torch
-from torch.utils.data import DataLoader, Subset
+from typing import Any
 
 import flwr as fl
+from torch.utils.data import DataLoader, Subset
+
 from data.loader import IEEEFraudDataset, load_ieee_cis_data
 from data.partitioner import GeographicPartitioner
-from experiment.client import IFDClient, FraudMLP
+from experiment.client import IFDClient
 from orchestration.flower_strategy import CascadeRouter
 
 
 def client_fn_factory(
-    client_indices: Dict[int, Any],
+    client_indices: dict[int, Any],
     train_dataset: IEEEFraudDataset,
     test_dataset: IEEEFraudDataset,
     input_dim: int,
     num_adversaries: int = 0,
-    attack_type: Optional[str] = None,
+    attack_type: str | None = None,
 ):
     """Factory creating client_fn closure for Flower simulation."""
-    
+
     def client_fn(cid: str) -> fl.client.Client:
         client_idx = int(cid)
         indices = client_indices[client_idx]
-        
+
         client_train_ds = Subset(train_dataset, indices)
         train_loader = DataLoader(client_train_ds, batch_size=32, shuffle=True)
         val_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
@@ -51,8 +51,8 @@ def run_simulation(
     num_clients: int = 5,
     num_rounds: int = 2,
     num_adversaries: int = 0,
-    attack_type: Optional[str] = None,
-    strategy: Optional[fl.server.strategy.Strategy] = None,
+    attack_type: str | None = None,
+    strategy: fl.server.strategy.Strategy | None = None,
 ) -> fl.server.history.History:
     """
     Run Flower simulation for federated learning fraud detection.

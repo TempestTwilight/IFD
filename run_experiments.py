@@ -33,8 +33,7 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
-
+from datetime import UTC, datetime
 
 # ============================================================================
 # Configuration
@@ -45,26 +44,18 @@ RESULTS_DIR = os.environ.get(
     "./results",
 )
 
-NUM_CLIENTS = int(
-    os.environ.get("NUM_CLIENTS", "10")
-)
+NUM_CLIENTS = int(os.environ.get("NUM_CLIENTS", "10"))
 
-NUM_ROUNDS = int(
-    os.environ.get("NUM_ROUNDS", "50")
-)
+NUM_ROUNDS = int(os.environ.get("NUM_ROUNDS", "50"))
 
-NROWS = int(
-    os.environ.get("NROWS", "150000")
-)
+NROWS = int(os.environ.get("NROWS", "150000"))
 
 SAVE_MODEL_ROOT = os.environ.get(
     "SAVE_MODEL_ROOT",
     "",
 )
 
-SEED = int(
-    os.environ.get("SEED", "44")
-)
+SEED = int(os.environ.get("SEED", "44"))
 
 BATCH_SIZE = 512
 EPOCHS = 10
@@ -76,9 +67,7 @@ EXPERIMENT_TIMEOUT_MINUTES = float(
     )
 )
 
-EXPERIMENT_TIMEOUT_SECONDS = (
-    EXPERIMENT_TIMEOUT_MINUTES * 60
-)
+EXPERIMENT_TIMEOUT_SECONDS = EXPERIMENT_TIMEOUT_MINUTES * 60
 
 RATIOS = [
     0.10,
@@ -128,12 +117,9 @@ SEED_COMPLETE_MARKER = os.path.join(
 # Utility
 # ============================================================================
 
+
 def timestamp():
-    return datetime.now(
-        timezone.utc
-    ).isoformat(
-        timespec="seconds"
-    )
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def write_log(message):
@@ -143,55 +129,41 @@ def write_log(message):
         "a",
         encoding="utf-8",
     ) as fh:
-
-        fh.write(
-            message + "\n"
-        )
+        fh.write(message + "\n")
 
 
 def n_adv(ratio):
 
     return max(
         1,
-        round(
-            NUM_CLIENTS * ratio
-        ),
+        round(NUM_CLIENTS * ratio),
     )
 
 
 def pct(ratio):
 
-    return (
-        f"{int(round(ratio * 100))}pct"
-    )
+    return f"{int(round(ratio * 100))}pct"
 
 
 def validate_config():
 
     if NUM_CLIENTS < 1:
-        raise ValueError(
-            "NUM_CLIENTS must be >= 1"
-        )
+        raise ValueError("NUM_CLIENTS must be >= 1")
 
     if NUM_ROUNDS < 1:
-        raise ValueError(
-            "NUM_ROUNDS must be >= 1"
-        )
+        raise ValueError("NUM_ROUNDS must be >= 1")
 
     if NROWS < 1:
-        raise ValueError(
-            "NROWS must be >= 1"
-        )
+        raise ValueError("NROWS must be >= 1")
 
     if EXPERIMENT_TIMEOUT_MINUTES <= 0:
-        raise ValueError(
-            "EXPERIMENT_TIMEOUT_MINUTES must be > 0"
-        )
+        raise ValueError("EXPERIMENT_TIMEOUT_MINUTES must be > 0")
 
 
 # ============================================================================
 # Experiment definitions
 # ============================================================================
+
 
 def build_experiments():
 
@@ -213,14 +185,8 @@ def build_experiments():
     # ------------------------------------------------------------------------
 
     for attack in ATTACKS:
-
         for ratio in RATIOS:
-
-            label = (
-                f"Attack_"
-                f"{ATTACK_LABELS[attack]}_"
-                f"{pct(ratio)}"
-            )
+            label = f"Attack_{ATTACK_LABELS[attack]}_{pct(ratio)}"
 
             experiments.append(
                 (
@@ -288,17 +254,11 @@ def build_experiments():
     ]
 
     for layer_name, layer_flag in layers:
-
         for condition_name, condition_args in conditions:
-
             experiments.append(
                 (
-                    f"Ablation_"
-                    f"{layer_name}_"
-                    f"{condition_name}",
-
-                    [layer_flag]
-                    + condition_args,
+                    f"Ablation_{layer_name}_{condition_name}",
+                    [layer_flag] + condition_args,
                 )
             )
 
@@ -308,6 +268,7 @@ def build_experiments():
 # ============================================================================
 # Completion markers
 # ============================================================================
+
 
 def bookkeeping_dir(label):
 
@@ -327,25 +288,19 @@ def complete_marker(label):
 
 def experiment_complete(label):
 
-    return os.path.isfile(
-        complete_marker(label)
-    )
+    return os.path.isfile(complete_marker(label))
 
 
 def write_complete(label):
 
-    directory = bookkeeping_dir(
-        label
-    )
+    directory = bookkeeping_dir(label)
 
     os.makedirs(
         directory,
         exist_ok=True,
     )
 
-    marker = complete_marker(
-        label
-    )
+    marker = complete_marker(label)
 
     tmp = marker + ".tmp"
 
@@ -354,17 +309,10 @@ def write_complete(label):
         "w",
         encoding="utf-8",
     ) as fh:
-
-        fh.write(
-            f"Experiment: {label}\n"
-            f"Seed: {SEED}\n"
-            f"Completed: {timestamp()}\n"
-        )
+        fh.write(f"Experiment: {label}\nSeed: {SEED}\nCompleted: {timestamp()}\n")
 
         fh.flush()
-        os.fsync(
-            fh.fileno()
-        )
+        os.fsync(fh.fileno())
 
     os.replace(
         tmp,
@@ -374,26 +322,17 @@ def write_complete(label):
 
 def write_seed_complete():
 
-    tmp = (
-        SEED_COMPLETE_MARKER
-        + ".tmp"
-    )
+    tmp = SEED_COMPLETE_MARKER + ".tmp"
 
     with open(
         tmp,
         "w",
         encoding="utf-8",
     ) as fh:
-
-        fh.write(
-            f"Seed: {SEED}\n"
-            f"Completed: {timestamp()}\n"
-        )
+        fh.write(f"Seed: {SEED}\nCompleted: {timestamp()}\n")
 
         fh.flush()
-        os.fsync(
-            fh.fileno()
-        )
+        os.fsync(fh.fileno())
 
     os.replace(
         tmp,
@@ -405,6 +344,7 @@ def write_seed_complete():
 # Ray cleanup
 # ============================================================================
 
+
 def cleanup_local_ray(reason=""):
 
     ray_address = os.environ.get(
@@ -413,11 +353,7 @@ def cleanup_local_ray(reason=""):
     ).strip()
 
     if ray_address:
-
-        message = (
-            "[Ray cleanup] skipped: "
-            f"RAY_ADDRESS={ray_address!r}"
-        )
+        message = f"[Ray cleanup] skipped: RAY_ADDRESS={ray_address!r}"
 
         print(
             message,
@@ -431,11 +367,7 @@ def cleanup_local_ray(reason=""):
     ray = shutil.which("ray")
 
     if ray is None:
-
-        message = (
-            "[Ray cleanup] ray executable "
-            "not found."
-        )
+        message = "[Ray cleanup] ray executable not found."
 
         print(
             message,
@@ -446,23 +378,16 @@ def cleanup_local_ray(reason=""):
 
         return
 
-    prefix = (
-        f"[Ray cleanup] {reason}"
-        if reason
-        else "[Ray cleanup]"
-    )
+    prefix = f"[Ray cleanup] {reason}" if reason else "[Ray cleanup]"
 
     print(
         f"{prefix} stopping local Ray...",
         flush=True,
     )
 
-    write_log(
-        f"{prefix} stopping local Ray..."
-    )
+    write_log(f"{prefix} stopping local Ray...")
 
     try:
-
         proc = subprocess.run(
             [
                 ray,
@@ -477,33 +402,23 @@ def cleanup_local_ray(reason=""):
         )
 
         if proc.stdout:
-
             print(
                 proc.stdout.strip(),
                 flush=True,
             )
 
-            write_log(
-                proc.stdout.strip()
-            )
+            write_log(proc.stdout.strip())
 
         if proc.returncode == 0:
-
             print(
                 "[Ray cleanup] local Ray stopped.",
                 flush=True,
             )
 
-            write_log(
-                "[Ray cleanup] local Ray stopped."
-            )
+            write_log("[Ray cleanup] local Ray stopped.")
 
         else:
-
-            message = (
-                "[Ray cleanup] ray stop returned "
-                f"rc={proc.returncode}"
-            )
+            message = f"[Ray cleanup] ray stop returned rc={proc.returncode}"
 
             print(
                 message,
@@ -513,11 +428,7 @@ def cleanup_local_ray(reason=""):
             write_log(message)
 
     except Exception as exc:
-
-        message = (
-            "[Ray cleanup] exception: "
-            f"{type(exc).__name__}: {exc}"
-        )
+        message = f"[Ray cleanup] exception: {type(exc).__name__}: {exc}"
 
         print(
             message,
@@ -531,6 +442,7 @@ def cleanup_local_ray(reason=""):
 # Process cleanup
 # ============================================================================
 
+
 def terminate_process_tree(
     process,
     experiment_log,
@@ -540,66 +452,45 @@ def terminate_process_tree(
         return
 
     try:
-
-        experiment_log.write(
-            f"\n[{timestamp()}] "
-            "Terminating process tree.\n"
-        )
+        experiment_log.write(f"\n[{timestamp()}] Terminating process tree.\n")
 
         experiment_log.flush()
 
         if os.name == "posix":
-
             os.killpg(
                 process.pid,
                 signal.SIGTERM,
             )
 
         else:
-
             process.terminate()
 
         try:
-
-            process.wait(
-                timeout=15
-            )
+            process.wait(timeout=15)
 
         except subprocess.TimeoutExpired:
-
             experiment_log.write(
-                f"[{timestamp()}] "
-                "Graceful termination timed out; "
-                "forcing termination.\n"
+                f"[{timestamp()}] Graceful termination timed out; forcing termination.\n"
             )
 
             experiment_log.flush()
 
             if os.name == "posix":
-
                 os.killpg(
                     process.pid,
                     signal.SIGKILL,
                 )
 
             else:
-
                 process.kill()
 
-            process.wait(
-                timeout=15
-            )
+            process.wait(timeout=15)
 
     except ProcessLookupError:
         pass
 
     except Exception as exc:
-
-        experiment_log.write(
-            f"[{timestamp()}] "
-            f"Termination error: "
-            f"{type(exc).__name__}: {exc}\n"
-        )
+        experiment_log.write(f"[{timestamp()}] Termination error: {type(exc).__name__}: {exc}\n")
 
         experiment_log.flush()
 
@@ -608,6 +499,7 @@ def terminate_process_tree(
 # Run one experiment
 # ============================================================================
 
+
 def run(label, extra_args):
 
     # ------------------------------------------------------------------------
@@ -615,10 +507,7 @@ def run(label, extra_args):
     # ------------------------------------------------------------------------
 
     if experiment_complete(label):
-
-        message = (
-            f"[{label}] SKIPPED — already complete."
-        )
+        message = f"[{label}] SKIPPED — already complete."
 
         print(
             message,
@@ -633,9 +522,7 @@ def run(label, extra_args):
     # Paths
     # ------------------------------------------------------------------------
 
-    book_dir = bookkeeping_dir(
-        label
-    )
+    book_dir = bookkeeping_dir(label)
 
     os.makedirs(
         book_dir,
@@ -652,14 +539,12 @@ def run(label, extra_args):
     # ------------------------------------------------------------------------
 
     if SAVE_MODEL_ROOT:
-
         model_dir = os.path.join(
             SAVE_MODEL_ROOT,
             "models",
         )
 
     else:
-
         model_dir = os.path.join(
             RESULTS_DIR,
             "models",
@@ -679,9 +564,7 @@ def run(label, extra_args):
     # Ray cleanup before experiment
     # ------------------------------------------------------------------------
 
-    cleanup_local_ray(
-        reason=f"before {label}"
-    )
+    cleanup_local_ray(reason=f"before {label}")
 
     # ------------------------------------------------------------------------
     # Command
@@ -690,31 +573,22 @@ def run(label, extra_args):
     cmd = [
         sys.executable,
         "train.py",
-
         "--num-clients",
         str(NUM_CLIENTS),
-
         "--num-rounds",
         str(NUM_ROUNDS),
-
         "--nrows",
         str(NROWS),
-
         "--batch-size",
         str(BATCH_SIZE),
-
         "--epochs-per-round",
         str(EPOCHS),
-
         "--results-dir",
         RESULTS_DIR,
-
         "--save-model",
         model_path,
-
         "--seed",
         str(SEED),
-
         "--run-label",
         label,
     ] + extra_args
@@ -740,9 +614,7 @@ def run(label, extra_args):
         flush=True,
     )
 
-    write_log(
-        header.rstrip()
-    )
+    write_log(header.rstrip())
 
     start = time.time()
 
@@ -751,16 +623,12 @@ def run(label, extra_args):
     # ------------------------------------------------------------------------
 
     try:
-
         with open(
             experiment_log_path,
             "a",
             encoding="utf-8",
         ) as experiment_log:
-
-            experiment_log.write(
-                header
-            )
+            experiment_log.write(header)
 
             experiment_log.flush()
 
@@ -777,19 +645,10 @@ def run(label, extra_args):
             }
 
             if os.name == "posix":
-
-                kwargs[
-                    "start_new_session"
-                ] = True
+                kwargs["start_new_session"] = True
 
             else:
-
-                kwargs[
-                    "creationflags"
-                ] = (
-                    subprocess
-                    .CREATE_NEW_PROCESS_GROUP
-                )
+                kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
 
             process = subprocess.Popen(
                 cmd,
@@ -797,26 +656,14 @@ def run(label, extra_args):
             )
 
             try:
-
-                return_code = process.wait(
-                    timeout=EXPERIMENT_TIMEOUT_SECONDS
-                )
+                return_code = process.wait(timeout=EXPERIMENT_TIMEOUT_SECONDS)
 
             except subprocess.TimeoutExpired:
+                elapsed = time.time() - start
 
-                elapsed = (
-                    time.time() - start
-                )
+                message = f"[{label}] TIMEOUT — {elapsed / 60:.1f} min"
 
-                message = (
-                    f"[{label}] TIMEOUT — "
-                    f"{elapsed / 60:.1f} min"
-                )
-
-                experiment_log.write(
-                    f"\n[{timestamp()}] "
-                    f"{message}\n"
-                )
+                experiment_log.write(f"\n[{timestamp()}] {message}\n")
 
                 experiment_log.flush()
 
@@ -825,9 +672,7 @@ def run(label, extra_args):
                     experiment_log,
                 )
 
-                cleanup_local_ray(
-                    reason=f"after timeout {label}"
-                )
+                cleanup_local_ray(reason=f"after timeout {label}")
 
                 print(
                     f"\n{message}\n",
@@ -839,16 +684,9 @@ def run(label, extra_args):
                 return False
 
     except Exception as exc:
+        elapsed = time.time() - start
 
-        elapsed = (
-            time.time() - start
-        )
-
-        message = (
-            f"[{label}] CRASHED — "
-            f"{type(exc).__name__}: {exc} — "
-            f"{elapsed / 60:.1f} min"
-        )
+        message = f"[{label}] CRASHED — {type(exc).__name__}: {exc} — {elapsed / 60:.1f} min"
 
         print(
             f"\n{message}\n",
@@ -857,9 +695,7 @@ def run(label, extra_args):
 
         write_log(message)
 
-        cleanup_local_ray(
-            reason=f"after crash {label}"
-        )
+        cleanup_local_ray(reason=f"after crash {label}")
 
         return False
 
@@ -867,30 +703,22 @@ def run(label, extra_args):
     # Always clean Ray
     # ------------------------------------------------------------------------
 
-    elapsed = (
-        time.time() - start
-    )
+    elapsed = time.time() - start
 
-    cleanup_local_ray(
-        reason=f"after {label}"
-    )
+    cleanup_local_ray(reason=f"after {label}")
 
     # ------------------------------------------------------------------------
     # Success
     # ------------------------------------------------------------------------
 
     if return_code == 0:
-
         # train.py has atomically written the JSON.
         json_path = os.path.join(
             RESULTS_DIR,
             f"{label}.json",
         )
 
-        if not os.path.isfile(
-            json_path
-        ):
-
+        if not os.path.isfile(json_path):
             message = (
                 f"[{label}] FAILED — "
                 "train.py returned 0 but expected "
@@ -909,11 +737,7 @@ def run(label, extra_args):
         # Only now is the experiment durable.
         write_complete(label)
 
-        message = (
-            f"[{label}] SUCCESS — "
-            f"{elapsed / 60:.1f} min — "
-            f"finished {timestamp()}"
-        )
+        message = f"[{label}] SUCCESS — {elapsed / 60:.1f} min — finished {timestamp()}"
 
         print(
             f"\n{message}\n",
@@ -929,10 +753,7 @@ def run(label, extra_args):
     # ------------------------------------------------------------------------
 
     message = (
-        f"[{label}] FAILED "
-        f"(rc={return_code}) — "
-        f"{elapsed / 60:.1f} min — "
-        f"finished {timestamp()}"
+        f"[{label}] FAILED (rc={return_code}) — {elapsed / 60:.1f} min — finished {timestamp()}"
     )
 
     print(
@@ -949,6 +770,7 @@ def run(label, extra_args):
 # Main
 # ============================================================================
 
+
 def main():
 
     validate_config()
@@ -956,24 +778,14 @@ def main():
     experiments = build_experiments()
 
     if len(experiments) != 22:
-
-        raise RuntimeError(
-            f"Expected 22 experiments, "
-            f"generated {len(experiments)}."
-        )
+        raise RuntimeError(f"Expected 22 experiments, generated {len(experiments)}.")
 
     # ------------------------------------------------------------------------
     # Already-complete seed
     # ------------------------------------------------------------------------
 
-    if os.path.isfile(
-        SEED_COMPLETE_MARKER
-    ):
-
-        message = (
-            f"Seed {SEED} already complete. "
-            "Nothing to run."
-        )
+    if os.path.isfile(SEED_COMPLETE_MARKER):
+        message = f"Seed {SEED} already complete. Nothing to run."
 
         print(
             message,
@@ -990,30 +802,15 @@ def main():
 
     write_log("")
     write_log("=" * 78)
-    write_log(
-        "IEEE TIFS Experiment Orchestrator"
-    )
-    write_log(
-        f"Started: {timestamp()}"
-    )
-    write_log(
-        f"Seed: {SEED}"
-    )
-    write_log(
-        f"Results: {RESULTS_DIR}"
-    )
-    write_log(
-        f"Experiments: {len(experiments)}"
-    )
-    write_log(
-        f"Timeout: "
-        f"{EXPERIMENT_TIMEOUT_MINUTES:.1f} min"
-    )
+    write_log("IEEE TIFS Experiment Orchestrator")
+    write_log(f"Started: {timestamp()}")
+    write_log(f"Seed: {SEED}")
+    write_log(f"Results: {RESULTS_DIR}")
+    write_log(f"Experiments: {len(experiments)}")
+    write_log(f"Timeout: {EXPERIMENT_TIMEOUT_MINUTES:.1f} min")
     write_log("=" * 78)
 
-    cleanup_local_ray(
-        reason="initial"
-    )
+    cleanup_local_ray(reason="initial")
 
     # ------------------------------------------------------------------------
     # Execute suite
@@ -1023,16 +820,10 @@ def main():
         experiments,
         start=1,
     ):
-
         print(
-            "\n"
-            + "#" * 78
-            + f"\n# Experiment "
+            "\n" + "#" * 78 + f"\n# Experiment "
             f"{index}/{len(experiments)}: "
-            f"{label}"
-            + "\n"
-            + "#" * 78
-            + "\n",
+            f"{label}" + "\n" + "#" * 78 + "\n",
             flush=True,
         )
 
@@ -1045,50 +836,29 @@ def main():
     # Final cleanup
     # ------------------------------------------------------------------------
 
-    cleanup_local_ray(
-        reason="final"
-    )
+    cleanup_local_ray(reason="final")
 
     # ------------------------------------------------------------------------
     # Determine durable state
     # ------------------------------------------------------------------------
 
-    completed = [
-        label
-        for label, _ in experiments
-        if experiment_complete(label)
-    ]
+    completed = [label for label, _ in experiments if experiment_complete(label)]
 
-    incomplete = [
-        label
-        for label, _ in experiments
-        if not experiment_complete(label)
-    ]
+    incomplete = [label for label, _ in experiments if not experiment_complete(label)]
 
     write_log("")
     write_log("=" * 78)
     write_log("FINAL STATUS")
     write_log("=" * 78)
-    write_log(
-        f"Finished: {timestamp()}"
-    )
-    write_log(
-        f"Completed: {len(completed)}/{len(experiments)}"
-    )
-    write_log(
-        f"Incomplete: {len(incomplete)}"
-    )
+    write_log(f"Finished: {timestamp()}")
+    write_log(f"Completed: {len(completed)}/{len(experiments)}")
+    write_log(f"Incomplete: {len(incomplete)}")
 
     if incomplete:
-
-        write_log(
-            "Incomplete experiments:"
-        )
+        write_log("Incomplete experiments:")
 
         for label in incomplete:
-            write_log(
-                f"  - {label}"
-            )
+            write_log(f"  - {label}")
 
         print(
             "\nIncomplete experiments:",
@@ -1096,7 +866,6 @@ def main():
         )
 
         for label in incomplete:
-
             print(
                 f"  - {label}",
                 flush=True,
@@ -1110,10 +879,7 @@ def main():
 
     write_seed_complete()
 
-    message = (
-        f"\nSUCCESS: All {len(experiments)} "
-        f"experiments completed for seed {SEED}."
-    )
+    message = f"\nSUCCESS: All {len(experiments)} experiments completed for seed {SEED}."
 
     print(
         message,
@@ -1130,45 +896,30 @@ def main():
 # ============================================================================
 
 if __name__ == "__main__":
-
     try:
-
-        sys.exit(
-            main()
-        )
+        sys.exit(main())
 
     except KeyboardInterrupt:
-
         print(
             "\nInterrupted by user.",
             flush=True,
         )
 
-        cleanup_local_ray(
-            reason="KeyboardInterrupt"
-        )
+        cleanup_local_ray(reason="KeyboardInterrupt")
 
-        write_log(
-            f"INTERRUPTED: {timestamp()}"
-        )
+        write_log(f"INTERRUPTED: {timestamp()}")
 
         sys.exit(130)
 
     except Exception as exc:
-
-        message = (
-            f"FATAL ERROR: "
-            f"{type(exc).__name__}: {exc}"
-        )
+        message = f"FATAL ERROR: {type(exc).__name__}: {exc}"
 
         print(
             message,
             flush=True,
         )
 
-        cleanup_local_ray(
-            reason="fatal error"
-        )
+        cleanup_local_ray(reason="fatal error")
 
         write_log(message)
 

@@ -2,16 +2,16 @@
 Experiment module for IFD-Fintech.
 """
 
-from experiment.client import IFDClient, FraudMLP
+from experiment.ablation import run_ablation_configs
+from experiment.client import FraudMLP, IFDClient
 from experiment.metrics import MetricTracker, compute_eval_metrics
 from experiment.simulation import run_simulation
-from experiment.ablation import run_ablation_configs
 
 __all__ = [
-    "IFDClient",
     "FraudMLP",
+    "IFDClient",
     "MetricTracker",
     "compute_eval_metrics",
-    "run_simulation",
     "run_ablation_configs",
+    "run_simulation",
 ]

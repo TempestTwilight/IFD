@@ -8,7 +8,7 @@ from .threshold_controller import ThresholdController
 
 __all__ = [
     "CascadeRouter",
-    "ThresholdController",
     "ReputationTracker",
+    "ThresholdController",
     "reputation_weighted_aggregate",
 ]

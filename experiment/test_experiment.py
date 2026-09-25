@@ -6,9 +6,8 @@ import numpy as np
 import torch
 
 from experiment.client import FraudMLP
-from experiment.metrics import compute_eval_metrics, MetricTracker
+from experiment.metrics import MetricTracker, compute_eval_metrics
 from experiment.simulation import run_simulation
-from experiment.ablation import run_ablation_configs
 
 
 def test_fraud_mlp():
@@ -30,7 +29,9 @@ def test_metrics_computation():
     assert metrics["roc_auc"] > 0.8, f"ROC-AUC should be high, got {metrics['roc_auc']}"
     assert metrics["fpr"] == 0.0, f"FPR at 0.5 threshold should be 0, got {metrics['fpr']}"
     assert metrics["tpr"] == 1.0, f"TPR at 0.5 threshold should be 1, got {metrics['tpr']}"
-    print(f"  Computed metrics: ROC-AUC={metrics['roc_auc']:.4f}, FPR={metrics['fpr']:.4f}, TPR={metrics['tpr']:.4f}")
+    print(
+        f"  Computed metrics: ROC-AUC={metrics['roc_auc']:.4f}, FPR={metrics['fpr']:.4f}, TPR={metrics['tpr']:.4f}"
+    )
 
     tracker = MetricTracker()
     tracker.log_round(1, metrics)
@@ -50,23 +51,29 @@ def test_single_class_metrics():
     print("\n--- Test 5: Single-Class Batch Metrics & Summary Robustness ---")
     y_true_all_zeros = np.zeros(20, dtype=int)
     y_pred_prob = np.random.uniform(0.1, 0.4, size=20)
-    
+
     metrics_single = compute_eval_metrics(y_true_all_zeros, y_pred_prob)
-    assert metrics_single["roc_auc"] == 0.5, f"Expected 0.5 for single-class roc_auc, got {metrics_single['roc_auc']}"
+    assert metrics_single["roc_auc"] == 0.5, (
+        f"Expected 0.5 for single-class roc_auc, got {metrics_single['roc_auc']}"
+    )
     assert not np.isnan(metrics_single["roc_auc"]), "roc_auc should not be NaN"
-    
+
     tracker = MetricTracker()
     tracker.log_round(1, metrics_single)
     # Round 2 has valid labels
-    y_true_valid = np.array([0]*10 + [1]*10)
-    metrics_valid = compute_eval_metrics(y_true_valid, np.array([0.1]*10 + [0.9]*10))
+    y_true_valid = np.array([0] * 10 + [1] * 10)
+    metrics_valid = compute_eval_metrics(y_true_valid, np.array([0.1] * 10 + [0.9] * 10))
     # Introduce extra metric key in round 2
     metrics_valid["extra_metric"] = 0.99
     tracker.log_round(2, metrics_valid)
-    
+
     summary = tracker.summary()
-    assert "mean_roc_auc" in summary and not np.isnan(summary["mean_roc_auc"]), "mean_roc_auc should be valid float"
-    assert "mean_extra_metric" in summary, "Metric introduced in round 2 should be included in summary"
+    assert "mean_roc_auc" in summary and not np.isnan(summary["mean_roc_auc"]), (
+        "mean_roc_auc should be valid float"
+    )
+    assert "mean_extra_metric" in summary, (
+        "Metric introduced in round 2 should be included in summary"
+    )
     print(f"  Summary with mixed rounds: {summary}")
     print("✓ Single-class metrics and summary robustness test PASSED")
 
@@ -76,7 +83,6 @@ if __name__ == "__main__":
     test_metrics_computation()
     test_single_class_metrics()
     test_simulation_run()
-    test_ablation_study()
     print("\n==========================================")
     print("ALL CHUNK 9 EXPERIMENT TESTS PASSED ✓")
     print("==========================================")

@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, tempo ]
+  pull_request:
+    branches: [ main, tempo ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Verify lockfile
+        run: uv lock --check
+
+      - name: Lint with Ruff
+        run: uv run ruff check .
+
+      - name: Run Pyrefly static check
+        run: uv run pyrefly check
+
+      - name: Run Pytest with Coverage
+        run: uv run pytest

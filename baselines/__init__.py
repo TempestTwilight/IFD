@@ -26,13 +26,13 @@ from baselines.b9_fldetector import FLDetector
 
 __all__ = [
     "BaselineAdapter",
-    "fedavg",
-    "krum",
-    "coordinate_median",
-    "trimmed_mean",
+    "FLDetector",
     "bulyan",
+    "coordinate_median",
+    "dp_fl",
+    "fedavg",
     "fltrust",
     "foolsgold",
-    "dp_fl",
-    "FLDetector",
+    "krum",
+    "trimmed_mean",
 ]

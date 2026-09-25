@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Training entrypoint for IFD-PART2.
 
@@ -20,33 +19,28 @@ import time
 # WSL2 workaround. Proper Ray cleanup is still performed.
 os.environ["RAY_memory_monitor_refresh_ms"] = "0"
 
-import numpy as np
-import torch
 import flwr as fl
+import numpy as np
 import ray
-
+import torch
 from torch.utils.data import DataLoader, Subset
 
 from data.loader import load_ieee_cis_data
 from data.partitioner import GeographicPartitioner
-
 from experiment.client import (
-    IFDClient,
     FraudMLP,
+    IFDClient,
     set_parameters,
 )
-
 from orchestration.flower_strategy import CascadeRouter
-
 
 # ============================================================================
 # Argument parsing
 # ============================================================================
 
+
 def parse_args():
-    p = argparse.ArgumentParser(
-        description="IFD-PART2 Federated Training"
-    )
+    p = argparse.ArgumentParser(description="IFD-PART2 Federated Training")
 
     p.add_argument(
         "--data-dir",
@@ -153,6 +147,7 @@ def parse_args():
 # Ray cleanup
 # ============================================================================
 
+
 def shutdown_ray():
     """
     Shut down the local Ray runtime.
@@ -161,9 +156,7 @@ def shutdown_ray():
     """
 
     try:
-
         if ray.is_initialized():
-
             print(
                 "\n[Ray cleanup] Shutting down Ray...",
                 flush=True,
@@ -180,17 +173,14 @@ def shutdown_ray():
             )
 
         else:
-
             print(
                 "\n[Ray cleanup] Ray is not initialized.",
                 flush=True,
             )
 
     except Exception as exc:
-
         print(
-            "[Ray cleanup] WARNING: "
-            f"{type(exc).__name__}: {exc}",
+            f"[Ray cleanup] WARNING: {type(exc).__name__}: {exc}",
             flush=True,
         )
 
@@ -198,6 +188,7 @@ def shutdown_ray():
 # ============================================================================
 # Atomic JSON writer
 # ============================================================================
+
 
 def atomic_json_dump(data, path):
     """
@@ -215,13 +206,11 @@ def atomic_json_dump(data, path):
     tmp_path = path + ".tmp"
 
     try:
-
         with open(
             tmp_path,
             "w",
             encoding="utf-8",
         ) as f:
-
             json.dump(
                 data,
                 f,
@@ -238,7 +227,6 @@ def atomic_json_dump(data, path):
         )
 
     except Exception:
-
         try:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
@@ -251,6 +239,7 @@ def atomic_json_dump(data, path):
 # ============================================================================
 # Main
 # ============================================================================
+
 
 def main():
 
@@ -274,48 +263,31 @@ def main():
     # ------------------------------------------------------------------------
 
     if args.num_clients < 1:
-        raise ValueError(
-            "--num-clients must be >= 1"
-        )
+        raise ValueError("--num-clients must be >= 1")
 
     if args.num_rounds < 1:
-        raise ValueError(
-            "--num-rounds must be >= 1"
-        )
+        raise ValueError("--num-rounds must be >= 1")
 
     if args.num_adversaries < 0:
-        raise ValueError(
-            "--num-adversaries must be >= 0"
-        )
+        raise ValueError("--num-adversaries must be >= 0")
 
     if args.num_adversaries > args.num_clients:
-        raise ValueError(
-            "--num-adversaries cannot exceed "
-            "--num-clients"
-        )
+        raise ValueError("--num-adversaries cannot exceed --num-clients")
 
     if args.nrows is not None and args.nrows < 1:
-        raise ValueError(
-            "--nrows must be >= 1"
-        )
+        raise ValueError("--nrows must be >= 1")
 
     if args.batch_size < 1:
-        raise ValueError(
-            "--batch-size must be >= 1"
-        )
+        raise ValueError("--batch-size must be >= 1")
 
     if args.epochs_per_round < 1:
-        raise ValueError(
-            "--epochs-per-round must be >= 1"
-        )
+        raise ValueError("--epochs-per-round must be >= 1")
 
     # ------------------------------------------------------------------------
     # Device
     # ------------------------------------------------------------------------
 
-    device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
-    )
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     print(
         f"Device: {device}",
@@ -323,16 +295,13 @@ def main():
     )
 
     if device.type == "cuda":
-
         print(
-            f"  GPU: "
-            f"{torch.cuda.get_device_name(0)}",
+            f"  GPU: {torch.cuda.get_device_name(0)}",
             flush=True,
         )
 
         print(
-            f"  VRAM: "
-            f"{torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB",
+            f"  VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB",
             flush=True,
         )
 
@@ -350,7 +319,6 @@ def main():
     )
 
     try:
-
         train_ds, test_ds = load_ieee_cis_data(
             data_dir=args.data_dir,
             nrows=args.nrows,
@@ -358,10 +326,8 @@ def main():
         )
 
     except FileNotFoundError:
-
         print(
-            f"ERROR: IEEE-CIS CSV files not found in "
-            f"'{args.data_dir}'.",
+            f"ERROR: IEEE-CIS CSV files not found in '{args.data_dir}'.",
             flush=True,
         )
 
@@ -395,9 +361,7 @@ def main():
         seed=args.seed,
     )
 
-    client_indices, _ = partitioner.partition(
-        labels
-    )
+    client_indices, _ = partitioner.partition(labels)
 
     # ------------------------------------------------------------------------
     # Flower client factory
@@ -430,9 +394,7 @@ def main():
             pin_memory=pin_memory,
         )
 
-        is_adv = (
-            client_idx < args.num_adversaries
-        )
+        is_adv = client_idx < args.num_adversaries
 
         client = IFDClient(
             cid=cid,
@@ -442,11 +404,7 @@ def main():
             epochs=args.epochs_per_round,
             lr=args.lr,
             is_adversary=is_adv,
-            attack_type=(
-                args.attack_type
-                if is_adv
-                else None
-            ),
+            attack_type=(args.attack_type if is_adv else None),
         )
 
         return client.to_client()
@@ -460,23 +418,14 @@ def main():
         if not metrics:
             return {}
 
-        total_examples = sum(
-            n
-            for n, _ in metrics
-        )
+        total_examples = sum(n for n, _ in metrics)
 
         if total_examples == 0:
             return {}
 
         keys = metrics[0][1].keys()
 
-        return {
-            key: sum(
-                n * values[key]
-                for n, values in metrics
-            ) / total_examples
-            for key in keys
-        }
+        return {key: sum(n * values[key] for n, values in metrics) / total_examples for key in keys}
 
     # ------------------------------------------------------------------------
     # Ablation layers
@@ -485,17 +434,14 @@ def main():
     from layers.layer1_norm_cosine import (
         Layer1NormCosine,
     )
-
     from layers.layer2_spectral import (
         Layer2Spectral,
     )
-
     from layers.layer3_temporal import (
         Layer3Temporal,
     )
 
     class _PassL1(Layer1NormCosine):
-
         def score(self, gradients):
 
             n = len(gradients)
@@ -506,7 +452,6 @@ def main():
             )
 
     class _PassL2(Layer2Spectral):
-
         def score(self, gradients):
 
             n = len(gradients)
@@ -517,7 +462,6 @@ def main():
             )
 
     class _PassL3(Layer3Temporal):
-
         def score(
             self,
             gradients,
@@ -531,30 +475,17 @@ def main():
                 torch.ones(n),
             )
 
-    layer1 = (
-        _PassL1()
-        if args.disable_layer1
-        else None
-    )
+    layer1 = _PassL1() if args.disable_layer1 else None
 
-    layer2 = (
-        _PassL2()
-        if args.disable_layer2
-        else None
-    )
+    layer2 = _PassL2() if args.disable_layer2 else None
 
-    layer3 = (
-        _PassL3()
-        if args.disable_layer3
-        else None
-    )
+    layer3 = _PassL3() if args.disable_layer3 else None
 
     # ------------------------------------------------------------------------
     # Strategy
     # ------------------------------------------------------------------------
 
     if args.baseline:
-
         from orchestration.baseline_strategy import (
             BaselineStrategy,
         )
@@ -565,13 +496,11 @@ def main():
         )
 
         print(
-            f"Strategy: BaselineStrategy "
-            f"({args.baseline})",
+            f"Strategy: BaselineStrategy ({args.baseline})",
             flush=True,
         )
 
     else:
-
         strategy = CascadeRouter(
             layer1=layer1,
             layer2=layer2,
@@ -622,13 +551,10 @@ def main():
     history = None
 
     try:
-
         history = fl.simulation.start_simulation(
             client_fn=client_fn,
             num_clients=args.num_clients,
-            config=fl.server.ServerConfig(
-                num_rounds=args.num_rounds
-            ),
+            config=fl.server.ServerConfig(num_rounds=args.num_rounds),
             strategy=strategy,
             client_resources={
                 "num_cpus": 10,
@@ -649,12 +575,10 @@ def main():
         )
 
     except Exception as exc:
-
         elapsed = time.time() - t0
 
         print(
-            f"\nERROR: FL simulation failed after "
-            f"{elapsed:.1f}s",
+            f"\nERROR: FL simulation failed after {elapsed:.1f}s",
             flush=True,
         )
 
@@ -666,7 +590,6 @@ def main():
         raise
 
     finally:
-
         shutdown_ray()
 
     # ------------------------------------------------------------------------
@@ -674,7 +597,6 @@ def main():
     # ------------------------------------------------------------------------
 
     if history is None:
-
         print(
             "ERROR: Simulation returned no history.",
             flush=True,
@@ -692,28 +614,18 @@ def main():
     )
 
     if args.run_label:
-
-        filename = (
-            f"{args.run_label}.json"
-        )
+        filename = f"{args.run_label}.json"
 
     else:
-
-        timestamp = time.strftime(
-            "%Y%m%d_%H%M%S"
-        )
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
 
         run_type = (
-            f"attack_{args.attack_type}_"
-            f"{args.num_adversaries}adv"
+            f"attack_{args.attack_type}_{args.num_adversaries}adv"
             if args.num_adversaries > 0
             else "clean"
         )
 
-        filename = (
-            f"history_{run_type}_"
-            f"{timestamp}.json"
-        )
+        filename = f"history_{run_type}_{timestamp}.json"
 
     metrics_path = os.path.join(
         args.results_dir,
@@ -727,15 +639,9 @@ def main():
         "num_rounds": args.num_rounds,
         "num_adversaries": args.num_adversaries,
         "attack_type": args.attack_type,
-
-        "losses_distributed":
-            history.losses_distributed,
-
-        "metrics_distributed":
-            history.metrics_distributed,
-
-        "metrics_centralized":
-            history.metrics_centralized,
+        "losses_distributed": history.losses_distributed,
+        "metrics_distributed": history.metrics_distributed,
+        "metrics_centralized": history.metrics_centralized,
     }
 
     atomic_json_dump(
@@ -753,10 +659,7 @@ def main():
     # ------------------------------------------------------------------------
 
     if args.save_model:
-
-        save_dir = os.path.dirname(
-            args.save_model
-        )
+        save_dir = os.path.dirname(args.save_model)
 
         if save_dir:
             os.makedirs(
@@ -764,9 +667,7 @@ def main():
                 exist_ok=True,
             )
 
-        final_model = FraudMLP(
-            input_dim=input_dim
-        ).to(device)
+        final_model = FraudMLP(input_dim=input_dim).to(device)
 
         if (
             hasattr(
@@ -775,15 +676,12 @@ def main():
             )
             and strategy.latest_aggregated_ndarrays
         ):
-
             set_parameters(
                 final_model,
                 strategy.latest_aggregated_ndarrays,
             )
 
-            tmp_model = (
-                args.save_model + ".tmp"
-            )
+            tmp_model = args.save_model + ".tmp"
 
             torch.save(
                 final_model.state_dict(),
@@ -796,16 +694,13 @@ def main():
             )
 
             print(
-                f"Model checkpoint saved to: "
-                f"{args.save_model}",
+                f"Model checkpoint saved to: {args.save_model}",
                 flush=True,
             )
 
         else:
-
             print(
-                "WARNING: No aggregated parameters "
-                "available; model checkpoint not saved.",
+                "WARNING: No aggregated parameters available; model checkpoint not saved.",
                 flush=True,
             )
 
@@ -817,13 +712,10 @@ def main():
 # ============================================================================
 
 if __name__ == "__main__":
-
     try:
-
         sys.exit(main())
 
     except KeyboardInterrupt:
-
         print(
             "\nTraining interrupted by user.",
             flush=True,
@@ -834,10 +726,8 @@ if __name__ == "__main__":
         sys.exit(130)
 
     except Exception as exc:
-
         print(
-            f"\nFATAL ERROR: "
-            f"{type(exc).__name__}: {exc}",
+            f"\nFATAL ERROR: {type(exc).__name__}: {exc}",
             flush=True,
         )
 

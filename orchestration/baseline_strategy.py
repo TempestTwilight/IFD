@@ -5,12 +5,10 @@ Provides the same aggregate_fit interface as CascadeRouter so that
 train.py can swap it in via --baseline without any other changes.
 """
 
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from collections.abc import Callable
 
 import numpy as np
 import torch
-
-import flwr as fl
 from flwr.common import (
     FitRes,
     Parameters,
@@ -35,21 +33,21 @@ class BaselineStrategy(FedAvg):
     def __init__(
         self,
         baseline_name: str,
-        evaluate_metrics_aggregation_fn: Optional[Callable] = None,
+        evaluate_metrics_aggregation_fn: Callable | None = None,
         **baseline_kwargs,
     ):
         super().__init__(
             evaluate_metrics_aggregation_fn=evaluate_metrics_aggregation_fn,
         )
         self.adapter = BaselineAdapter(baseline_name, **baseline_kwargs)
-        self.latest_aggregated_ndarrays: Optional[List[np.ndarray]] = None
+        self.latest_aggregated_ndarrays: list[np.ndarray] | None = None
 
     def aggregate_fit(
         self,
         server_round: int,
-        results: List[Tuple[ClientProxy, FitRes]],
-        failures: List[Union[Tuple[ClientProxy, FitRes], BaseException]],
-    ) -> Tuple[Optional[Parameters], Dict[str, Scalar]]:
+        results: list[tuple[ClientProxy, FitRes]],
+        failures: list[tuple[ClientProxy, FitRes] | BaseException],
+    ) -> tuple[Parameters | None, dict[str, Scalar]]:
         """Aggregate using the chosen baseline, then reconstruct per-layer arrays."""
 
         if not results:
@@ -58,21 +56,19 @@ class BaselineStrategy(FedAvg):
         # ------------------------------------------------------------------
         # 1. Extract client IDs and parameter arrays
         # ------------------------------------------------------------------
-        client_ids: List[str] = []
-        client_param_ndarrays: List[List[np.ndarray]] = []
+        client_ids: list[str] = []
+        client_param_ndarrays: list[list[np.ndarray]] = []
 
         for client_proxy, fit_res in results:
             client_ids.append(str(client_proxy.cid))
-            client_param_ndarrays.append(
-                parameters_to_ndarrays(fit_res.parameters)
-            )
+            client_param_ndarrays.append(parameters_to_ndarrays(fit_res.parameters))
 
         # ------------------------------------------------------------------
         # 2. Flatten each client's parameters into one float32 vector
         # ------------------------------------------------------------------
-        flattened: List[torch.Tensor] = []
-        shapes: List[tuple] = []
-        dtypes: List[np.dtype] = []
+        flattened: list[torch.Tensor] = []
+        shapes: list[tuple] = []
+        dtypes: list[np.dtype] = []
 
         # Capture shapes/dtypes from first client (all clients share same architecture)
         for arr in client_param_ndarrays[0]:
@@ -80,10 +76,7 @@ class BaselineStrategy(FedAvg):
             dtypes.append(arr.dtype)
 
         for ndarrays in client_param_ndarrays:
-            parts = [
-                np.asarray(arr, dtype=np.float32).reshape(-1)
-                for arr in ndarrays
-            ]
+            parts = [np.asarray(arr, dtype=np.float32).reshape(-1) for arr in ndarrays]
             flat = np.concatenate(parts, axis=0)
             flattened.append(torch.from_numpy(flat.copy()))
 
@@ -109,7 +102,7 @@ class BaselineStrategy(FedAvg):
         # ------------------------------------------------------------------
         agg_numpy = agg_flat.detach().cpu().numpy().astype(np.float32)
 
-        aggregated_ndarrays: List[np.ndarray] = []
+        aggregated_ndarrays: list[np.ndarray] = []
         offset = 0
         for i, (shape, dtype) in enumerate(zip(shapes, dtypes)):
             size = int(np.prod(shape))
@@ -117,14 +110,10 @@ class BaselineStrategy(FedAvg):
             offset += size
 
             if np.issubdtype(dtype, np.floating):
-                aggregated_ndarrays.append(
-                    layer_flat.reshape(shape).astype(dtype)
-                )
+                aggregated_ndarrays.append(layer_flat.reshape(shape).astype(dtype))
             else:
                 # Non-floating buffers: copy from first client (same as CascadeRouter)
-                aggregated_ndarrays.append(
-                    client_param_ndarrays[0][i].copy()
-                )
+                aggregated_ndarrays.append(client_param_ndarrays[0][i].copy())
 
         self.latest_aggregated_ndarrays = aggregated_ndarrays
 

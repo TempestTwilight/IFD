@@ -52,19 +52,19 @@ if scores.numel() == 0:
     continue
 """
 
+
 import torch
-from typing import Dict
 
 
 class ThresholdController:
     """
     Adaptive per-layer threshold controller with exponential moving average
     of rejection rates.
-    
+
     Escalates thresholds when attack is detected (high rejection rate),
     decays back to baseline when system is calm.
     """
-    
+
     def __init__(
         self,
         beta: float = 0.2,
@@ -76,7 +76,7 @@ class ThresholdController:
     ):
         """
         Initialize threshold controller.
-        
+
         Args:
             beta: EMA weight for rejection rate tracking (placeholder)
             threshold_trigger: EMA rejection rate that triggers escalation (placeholder)
@@ -91,76 +91,68 @@ class ThresholdController:
         self.decay_step = decay_step
         self.base_threshold = base_threshold
         self.max_threshold = max_threshold
-        
+
         # Per-layer state: EMA of rejection rate and current threshold
-        self.ema_reject: Dict[str, float] = {}
-        self.current_threshold: Dict[str, float] = {}
-    
-    def update(self, layer_scores: Dict[str, torch.Tensor]) -> Dict[str, float]:
+        self.ema_reject: dict[str, float] = {}
+        self.current_threshold: dict[str, float] = {}
+
+    def update(self, layer_scores: dict[str, torch.Tensor]) -> dict[str, float]:
         """
         Update thresholds based on layer-wise acceptance scores.
-        
+
         Args:
             layer_scores: Dictionary mapping layer names to acceptance score tensors
                          e.g., {"layer1": a1_scores, "layer2": a2_scores, ...}
                          Each tensor has shape [num_clients] with scores in [0, 1]
-        
+
         Returns:
             Dictionary mapping layer names to updated thresholds
         """
         updated_thresholds = {}
-        
+
         for layer_name, scores in layer_scores.items():
             # Initialize layer state on first encounter
             if layer_name not in self.ema_reject:
                 self.ema_reject[layer_name] = 0.0
                 self.current_threshold[layer_name] = self.base_threshold
-            
+
             if scores.numel() == 0:
                 updated_thresholds[layer_name] = self.current_threshold[layer_name]
                 continue
-            
+
             # Compute rejection rate: fraction of clients with score < 0.5
             # Using 0.5 as the rejection boundary per spec
             rejection_mask = scores < 0.5
             rejection_rate = rejection_mask.float().mean().item()
-            
+
             # Update EMA of rejection rate
             # EMA_reject_k = β · rejection_rate_k + (1-β) · EMA_reject_k^(t-1)
             prev_ema = self.ema_reject[layer_name]
-            self.ema_reject[layer_name] = (
-                self.beta * rejection_rate + (1 - self.beta) * prev_ema
-            )
-            
+            self.ema_reject[layer_name] = self.beta * rejection_rate + (1 - self.beta) * prev_ema
+
             # Escalate or decay threshold based on EMA rejection rate
             current_thresh = self.current_threshold[layer_name]
-            
+
             if self.ema_reject[layer_name] > self.threshold_trigger:
                 # Attack detected: escalate threshold
-                new_thresh = min(
-                    current_thresh + self.escalation_step,
-                    self.max_threshold
-                )
+                new_thresh = min(current_thresh + self.escalation_step, self.max_threshold)
             else:
                 # System calm: decay back to baseline
-                new_thresh = max(
-                    current_thresh - self.decay_step,
-                    self.base_threshold
-                )
-            
+                new_thresh = max(current_thresh - self.decay_step, self.base_threshold)
+
             self.current_threshold[layer_name] = new_thresh
             updated_thresholds[layer_name] = new_thresh
-        
+
         return updated_thresholds
-    
-    def get_thresholds(self) -> Dict[str, float]:
+
+    def get_thresholds(self) -> dict[str, float]:
         """Get current thresholds for all tracked layers."""
         return self.current_threshold.copy()
-    
-    def get_ema_reject_rates(self) -> Dict[str, float]:
+
+    def get_ema_reject_rates(self) -> dict[str, float]:
         """Get current EMA rejection rates for all tracked layers."""
         return self.ema_reject.copy()
-    
+
     def reset(self):
         """Reset all layer state to initial values."""
         self.ema_reject.clear()

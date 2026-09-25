@@ -3,10 +3,15 @@ Numerical Verification for Chunk 5: CascadeRouter Flower Strategy Adapter
 """
 
 from unittest.mock import MagicMock
-import numpy as np
-import torch
 
-from flwr.common import FitRes, Status, Code, ndarrays_to_parameters, parameters_to_ndarrays
+import numpy as np
+from flwr.common import (
+    Code,
+    FitRes,
+    Status,
+    ndarrays_to_parameters,
+    parameters_to_ndarrays,
+)
 from flwr.server.client_proxy import ClientProxy
 
 from orchestration.flower_strategy import CascadeRouter
@@ -23,7 +28,10 @@ def test_cascade_router_execution():
     strategy = CascadeRouter()
 
     # Create 5 mock client fit results across 3 rounds
-    weights = [np.random.randn(10, 5).astype(np.float32), np.random.randn(5).astype(np.float32)]
+    weights = [
+        np.random.randn(10, 5).astype(np.float32),
+        np.random.randn(5).astype(np.float32),
+    ]
     fit_res = FitRes(
         status=Status(code=Code.OK, message="Success"),
         parameters=ndarrays_to_parameters(weights),
@@ -36,16 +44,23 @@ def test_cascade_router_execution():
     for r in range(1, 4):
         parameters, metrics = strategy.aggregate_fit(server_round=r, results=results, failures=[])
         assert "layer1_reject_rate_raw" in metrics, "Missing layer1_reject_rate_raw in metrics"
-        assert "layer1_reject_rate_at_threshold" in metrics, "Missing layer1_reject_rate_at_threshold in metrics"
+        assert "layer1_reject_rate_at_threshold" in metrics, (
+            "Missing layer1_reject_rate_at_threshold in metrics"
+        )
         assert "layer2_reject_rate_raw" in metrics, "Missing layer2_reject_rate_raw in metrics"
-        assert "layer2_reject_rate_at_threshold" in metrics, "Missing layer2_reject_rate_at_threshold in metrics"
+        assert "layer2_reject_rate_at_threshold" in metrics, (
+            "Missing layer2_reject_rate_at_threshold in metrics"
+        )
         assert "layer3_reject_rate_raw" in metrics, "Missing layer3_reject_rate_raw in metrics"
-        assert "layer3_reject_rate_at_threshold" in metrics, "Missing layer3_reject_rate_at_threshold in metrics"
+        assert "layer3_reject_rate_at_threshold" in metrics, (
+            "Missing layer3_reject_rate_at_threshold in metrics"
+        )
         print(f"Round {r} Metrics:")
         for k, v in metrics.items():
             print(f"  {k}: {v}")
-        
+
         # Verify structure of aggregated parameters
+        assert parameters is not None, "Aggregated parameters should not be None"
         agg_ndarrays = parameters_to_ndarrays(parameters)
         assert len(agg_ndarrays) == len(weights), "Aggregated weights layer count mismatch"
         assert agg_ndarrays[0].shape == weights[0].shape, "Aggregated shape mismatch"

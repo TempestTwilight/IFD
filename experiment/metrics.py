@@ -2,19 +2,28 @@
 Metric Tracking & Evaluation Utilities (FPR, TPR, ROC-AUC, PR-AUC)
 """
 
-from typing import Dict, List, Tuple
 import numpy as np
-from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score, precision_recall_curve, auc
+from sklearn.metrics import (
+    auc,
+    f1_score,
+    precision_recall_curve,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 
 
-def compute_eval_metrics(y_true: np.ndarray, y_pred_prob: np.ndarray) -> Dict[str, float]:
+def compute_eval_metrics(
+    y_true: np.ndarray, y_pred_prob: np.ndarray, threshold: float = 0.5
+) -> dict[str, float]:
     """
     Compute comprehensive fraud detection evaluation metrics.
-    
+
     Args:
         y_true: 1D ground truth binary labels (0 = honest transaction, 1 = fraud)
         y_pred_prob: 1D predicted probability scores in [0, 1]
-        
+        threshold: Binary decision threshold
+
     Returns:
         Dict of computed metrics: roc_auc, pr_auc, precision, recall, f1, fpr, tpr
     """
@@ -34,9 +43,8 @@ def compute_eval_metrics(y_true: np.ndarray, y_pred_prob: np.ndarray) -> Dict[st
     except Exception:
         pr_auc = 0.0
 
-    # Binary metrics at threshold 0.5
-    # Chenged to 0.33
-    y_pred_bin = (y_pred_prob >= 0.33).astype(int)
+    # Binary metrics at decision threshold
+    y_pred_bin = (y_pred_prob >= threshold).astype(int)
 
     precision = float(precision_score(y_true, y_pred_bin, zero_division=0))
     recall = float(recall_score(y_true, y_pred_bin, zero_division=0))
@@ -66,13 +74,13 @@ class MetricTracker:
     """Accumulates round-by-round defense metrics."""
 
     def __init__(self):
-        self.history: List[Dict[str, float]] = []
+        self.history: list[dict[str, float]] = []
 
-    def log_round(self, round_num: int, metrics: Dict[str, float]):
+    def log_round(self, round_num: int, metrics: dict[str, float]):
         record = {"round": round_num, **metrics}
         self.history.append(record)
 
-    def summary(self) -> Dict[str, float]:
+    def summary(self) -> dict[str, float]:
         if not self.history:
             return {}
         keys = set().union(*(d.keys() for d in self.history))

@@ -180,7 +180,7 @@ where $R_{\text{SS}} = 0.85$ serves as the steady-state anchor, preventing perma
 
 **Reputation-Weighted Aggregation:**
 Updates are aggregated according to their reputation weight $w_i$:
-$$w_i = \begin{cases} 
+$$w_i = \begin{cases}
 R_i & \text{if } a_i \ge \theta_{\text{accept}} \\
 R_i \cdot \text{suspicious\_weight} & \text{if } \theta_{\text{reject}} \le a_i < \theta_{\text{accept}} \\
 0 & \text{if } a_i < \theta_{\text{reject}}

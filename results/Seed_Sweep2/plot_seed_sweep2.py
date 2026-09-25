@@ -24,22 +24,24 @@ Output figures (all saved to results/seed_sweep2/figures/):
 
 import json
 import os
-import numpy as np
+
 import matplotlib
+import numpy as np
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-SWEEP_DIR  = os.path.dirname(os.path.abspath(__file__))
-FIG_DIR    = os.path.join(SWEEP_DIR, "figures")
+SWEEP_DIR = os.path.dirname(os.path.abspath(__file__))
+FIG_DIR = os.path.join(SWEEP_DIR, "figures")
 os.makedirs(FIG_DIR, exist_ok=True)
 
-SEEDS = [f"seed_{s}" for s in range(45, 56)]   # seed_45 … seed_55
+SEEDS = [f"seed_{s}" for s in range(45, 56)]  # seed_45 … seed_55
 METRICS = ["auc", "f1", "precision", "recall", "accuracy"]
 N_ROUNDS = 50
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def load(seed: str, exp: str) -> dict | None:
     """Load a JSON for one seed/experiment. Returns None if missing or <50 rounds."""
@@ -100,8 +102,8 @@ def plot_mean_std(ax, curves: np.ndarray, label: str, color: str, linestyle="-")
     if curves is None or len(curves) == 0:
         return
     mean = curves.mean(axis=0)
-    std  = curves.std(axis=0)
-    xs   = np.arange(1, N_ROUNDS + 1)
+    std = curves.std(axis=0)
+    xs = np.arange(1, N_ROUNDS + 1)
     ax.plot(xs, mean, color=color, label=label, linewidth=1.8, linestyle=linestyle)
     ax.fill_between(xs, mean - std, mean + std, color=color, alpha=0.15)
 
@@ -119,23 +121,24 @@ def fig1_clean_baseline():
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
     fig.suptitle(
         f"Clean Baseline — Mean ± Std over {len(SEEDS)} Seeds",
-        fontsize=13, fontweight="bold"
+        fontsize=13,
+        fontweight="bold",
     )
 
     style = [
-        ("auc",       "AUC",       "royalblue",  "o", ax1),
-        ("f1",        "F1",        "darkorange",  "s", ax1),
-        ("precision", "Precision", "purple",      "^", ax2),
-        ("recall",    "Recall",    "crimson",     "v", ax2),
-        ("accuracy",  "Accuracy",  "seagreen",    "D", ax2),
+        ("auc", "AUC", "royalblue", "o", ax1),
+        ("f1", "F1", "darkorange", "s", ax1),
+        ("precision", "Precision", "purple", "^", ax2),
+        ("recall", "Recall", "crimson", "v", ax2),
+        ("accuracy", "Accuracy", "seagreen", "D", ax2),
     ]
     for metric, label, color, marker, ax in style:
         curves = collect_curves("CleanRun_Simple", metric)
         if curves is None:
             continue
         mean = curves.mean(axis=0)
-        std  = curves.std(axis=0)
-        xs   = np.arange(1, N_ROUNDS + 1)
+        std = curves.std(axis=0)
+        xs = np.arange(1, N_ROUNDS + 1)
         ax.plot(xs, mean, color=color, label=label, linewidth=1.8)
         ax.fill_between(xs, mean - std, mean + std, color=color, alpha=0.15)
 
@@ -154,15 +157,21 @@ def fig1_clean_baseline():
 # ── Fig 2 & 3: Attack final-round heatmaps ────────────────────────────────────
 def fig2_fig3_attack_heatmaps():
     attacks = ["SignFlip", "LabelFlip", "ModelReplace"]
-    ratios  = ["10pct", "20pct", "40pct"]
+    ratios = ["10pct", "20pct", "40pct"]
 
     for metric, figname, title in [
-        ("auc", "fig2_attack_auc_heatmap.png",
-         "Final-Round AUC — Attack Robustness (Mean over Seeds)"),
-        ("f1",  "fig3_attack_f1_heatmap.png",
-         "Final-Round F1 — Attack Robustness (Mean over Seeds)"),
+        (
+            "auc",
+            "fig2_attack_auc_heatmap.png",
+            "Final-Round AUC — Attack Robustness (Mean over Seeds)",
+        ),
+        (
+            "f1",
+            "fig3_attack_f1_heatmap.png",
+            "Final-Round F1 — Attack Robustness (Mean over Seeds)",
+        ),
     ]:
-        data   = np.full((len(attacks), len(ratios)), np.nan)
+        data = np.full((len(attacks), len(ratios)), np.nan)
         counts = np.zeros((len(attacks), len(ratios)), dtype=int)
 
         for i, atk in enumerate(attacks):
@@ -170,7 +179,7 @@ def fig2_fig3_attack_heatmaps():
                 exp = f"Attack_{atk}_{pct}"
                 vals = collect_final(exp, metric)
                 if vals:
-                    data[i, j]   = np.mean(vals)
+                    data[i, j] = np.mean(vals)
                     counts[i, j] = len(vals)
 
         fig, ax = plt.subplots(figsize=(8, 5))
@@ -187,9 +196,15 @@ def fig2_fig3_attack_heatmaps():
         for i in range(len(attacks)):
             for j in range(len(ratios)):
                 if not np.isnan(data[i, j]):
-                    ax.text(j, i, f"{data[i,j]:.3f}\n(n={counts[i,j]})",
-                            ha="center", va="center", fontsize=9,
-                            color="black" if data[i, j] > 0.4 else "white")
+                    ax.text(
+                        j,
+                        i,
+                        f"{data[i, j]:.3f}\n(n={counts[i, j]})",
+                        ha="center",
+                        va="center",
+                        fontsize=9,
+                        color="black" if data[i, j] > 0.4 else "white",
+                    )
 
         savefig(figname)
 
@@ -200,7 +215,8 @@ def fig_attack_rounds(attack_label: str, attack_key: str, ratios: list, figname:
     fig, ax = plt.subplots(figsize=(10, 5))
     fig.suptitle(
         f"AUC over Rounds — {attack_label} Attack (Mean ± Std over Seeds)",
-        fontsize=12, fontweight="bold"
+        fontsize=12,
+        fontweight="bold",
     )
 
     clean_curves = collect_curves("CleanRun_Simple", "auc")
@@ -223,18 +239,18 @@ def fig_attack_rounds(attack_label: str, attack_key: str, ratios: list, figname:
 
 # ── Fig 7-9: Ablation grouped bar charts ──────────────────────────────────────
 def fig_ablation_bar(metric: str, ylabel: str, figname: str, title: str):
-    layers     = ["NoL1", "NoL2", "NoL3"]
+    layers = ["NoL1", "NoL2", "NoL3"]
     conditions = [
-        ("Clean",              "Clean",           "royalblue"),
-        ("SignFlip20pct",      "SignFlip 20%",     "darkorange"),
-        ("LabelFlip20pct",     "LabelFlip 20%",    "seagreen"),
-        ("ModelReplace20pct",  "ModelReplace 20%", "crimson"),
+        ("Clean", "Clean", "royalblue"),
+        ("SignFlip20pct", "SignFlip 20%", "darkorange"),
+        ("LabelFlip20pct", "LabelFlip 20%", "seagreen"),
+        ("ModelReplace20pct", "ModelReplace 20%", "crimson"),
     ]
     full_model_vals = collect_final("CleanRun_Simple", metric)
     full_model_mean = np.mean(full_model_vals) if full_model_vals else np.nan
 
-    x     = np.arange(len(layers))
-    n_c   = len(conditions)
+    x = np.arange(len(layers))
+    n_c = len(conditions)
     width = 0.18
     offsets = np.linspace(-(n_c - 1) / 2, (n_c - 1) / 2, n_c) * width
 
@@ -244,22 +260,39 @@ def fig_ablation_bar(metric: str, ylabel: str, figname: str, title: str):
     for offset, (cond_key, cond_label, color) in zip(offsets, conditions):
         vals = []
         for layer in layers:
-            exp  = f"Ablation_{layer}_{cond_key}"
+            exp = f"Ablation_{layer}_{cond_key}"
             data = collect_final(exp, metric)
             vals.append(np.mean(data) if data else np.nan)
 
-        bars = ax.bar(x + offset, vals, width=width, color=color,
-                      edgecolor="black", linewidth=0.6, label=cond_label)
+        bars = ax.bar(
+            x + offset,
+            vals,
+            width=width,
+            color=color,
+            edgecolor="black",
+            linewidth=0.6,
+            label=cond_label,
+        )
         for bar, v in zip(bars, vals):
             if not np.isnan(v):
-                ax.text(bar.get_x() + bar.get_width() / 2,
-                        bar.get_height() + 0.008,
-                        f"{v:.3f}", ha="center", va="bottom", fontsize=7)
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + 0.008,
+                    f"{v:.3f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=7,
+                )
 
     # Full-model reference line
     if not np.isnan(full_model_mean):
-        ax.axhline(full_model_mean, color="black", linewidth=1.2,
-                   linestyle=":", label=f"Full model ({full_model_mean:.3f})")
+        ax.axhline(
+            full_model_mean,
+            color="black",
+            linewidth=1.2,
+            linestyle=":",
+            label=f"Full model ({full_model_mean:.3f})",
+        )
 
     ax.set_xticks(x)
     ax.set_xticklabels(["No Layer 1", "No Layer 2", "No Layer 3"], fontsize=11)
@@ -273,26 +306,30 @@ def fig_ablation_bar(metric: str, ylabel: str, figname: str, title: str):
 # ── Fig 10: Per-seed variance for key experiments ─────────────────────────────
 def fig10_seed_variance():
     scenarios = [
-        ("CleanRun_Simple",     "Clean",          "royalblue"),
-        ("Attack_SignFlip_20pct",  "SignFlip 20%",   "darkorange"),
-        ("Attack_LabelFlip_20pct", "LabelFlip 20%",  "seagreen"),
+        ("CleanRun_Simple", "Clean", "royalblue"),
+        ("Attack_SignFlip_20pct", "SignFlip 20%", "darkorange"),
+        ("Attack_LabelFlip_20pct", "LabelFlip 20%", "seagreen"),
         ("Attack_ModelReplace_20pct", "ModelReplace 20%", "crimson"),
     ]
     seed_nums = [int(s.split("_")[1]) for s in SEEDS]
 
     fig, ax = plt.subplots(figsize=(12, 6))
-    fig.suptitle(
-        "Per-Seed Final-Round AUC — Key Scenarios",
-        fontsize=13, fontweight="bold"
-    )
+    fig.suptitle("Per-Seed Final-Round AUC — Key Scenarios", fontsize=13, fontweight="bold")
 
     for exp, label, color in scenarios:
         vals = []
         for seed in SEEDS:
             d = load(seed, exp)
             vals.append(final(d, "auc") if d else np.nan)
-        ax.plot(seed_nums, vals, marker="o", color=color,
-                label=label, linewidth=1.5, markersize=6)
+        ax.plot(
+            seed_nums,
+            vals,
+            marker="o",
+            color=color,
+            label=label,
+            linewidth=1.5,
+            markersize=6,
+        )
 
     ax.set_xlabel("Random Seed")
     ax.set_ylabel("Final-Round AUC")
@@ -306,24 +343,25 @@ def fig10_seed_variance():
 # ── Fig 11: Precision-Recall scatter across all scenarios ─────────────────────
 def fig11_precision_recall_scatter():
     scenarios = [
-        ("CleanRun_Simple",           "Clean",              "o", "royalblue",  100),
-        ("Attack_SignFlip_10pct",     "SignFlip 10%",        "s", "gold",        70),
-        ("Attack_SignFlip_20pct",     "SignFlip 20%",        "s", "darkorange",  70),
-        ("Attack_LabelFlip_10pct",    "LabelFlip 10%",       "^", "lightgreen",  70),
-        ("Attack_LabelFlip_20pct",    "LabelFlip 20%",       "^", "seagreen",    70),
-        ("Attack_LabelFlip_40pct",    "LabelFlip 40%",       "^", "darkgreen",   70),
-        ("Attack_ModelReplace_10pct", "ModelReplace 10%",    "D", "plum",        70),
-        ("Attack_ModelReplace_20pct", "ModelReplace 20%",    "D", "orchid",      70),
-        ("Attack_ModelReplace_40pct", "ModelReplace 40%",    "D", "purple",      70),
-        ("Ablation_NoL1_Clean",       "No L1 (clean)",       "P", "steelblue",   70),
-        ("Ablation_NoL2_Clean",       "No L2 (clean)",       "P", "cornflowerblue", 70),
-        ("Ablation_NoL3_Clean",       "No L3 (clean)",       "P", "deepskyblue", 70),
+        ("CleanRun_Simple", "Clean", "o", "royalblue", 100),
+        ("Attack_SignFlip_10pct", "SignFlip 10%", "s", "gold", 70),
+        ("Attack_SignFlip_20pct", "SignFlip 20%", "s", "darkorange", 70),
+        ("Attack_LabelFlip_10pct", "LabelFlip 10%", "^", "lightgreen", 70),
+        ("Attack_LabelFlip_20pct", "LabelFlip 20%", "^", "seagreen", 70),
+        ("Attack_LabelFlip_40pct", "LabelFlip 40%", "^", "darkgreen", 70),
+        ("Attack_ModelReplace_10pct", "ModelReplace 10%", "D", "plum", 70),
+        ("Attack_ModelReplace_20pct", "ModelReplace 20%", "D", "orchid", 70),
+        ("Attack_ModelReplace_40pct", "ModelReplace 40%", "D", "purple", 70),
+        ("Ablation_NoL1_Clean", "No L1 (clean)", "P", "steelblue", 70),
+        ("Ablation_NoL2_Clean", "No L2 (clean)", "P", "cornflowerblue", 70),
+        ("Ablation_NoL3_Clean", "No L3 (clean)", "P", "deepskyblue", 70),
     ]
 
     fig, ax = plt.subplots(figsize=(10, 8))
     fig.suptitle(
         "Precision vs Recall — Final Round, Mean over Seeds",
-        fontsize=13, fontweight="bold"
+        fontsize=13,
+        fontweight="bold",
     )
 
     for exp, label, marker, color, size in scenarios:
@@ -331,11 +369,17 @@ def fig11_precision_recall_scatter():
         rs = collect_final(exp, "recall")
         if not ps or not rs:
             continue
-        ax.scatter(np.mean(rs), np.mean(ps),
-                   marker=marker, color=color, s=size,
-                   edgecolors="black", linewidths=0.6,
-                   label=f"{label}  P={np.mean(ps):.3f} R={np.mean(rs):.3f}",
-                   zorder=3)
+        ax.scatter(
+            np.mean(rs),
+            np.mean(ps),
+            marker=marker,
+            color=color,
+            s=size,
+            edgecolors="black",
+            linewidths=0.6,
+            label=f"{label}  P={np.mean(ps):.3f} R={np.mean(rs):.3f}",
+            zorder=3,
+        )
 
     # Iso-F1 curves
     rec_grid = np.linspace(0.01, 1.0, 300)
@@ -343,14 +387,23 @@ def fig11_precision_recall_scatter():
         with np.errstate(invalid="ignore", divide="ignore"):
             p_iso = f1_val * rec_grid / (2 * rec_grid - f1_val)
         mask = (p_iso >= 0) & (p_iso <= 1)
-        ax.plot(rec_grid[mask], p_iso[mask], color="lightgrey",
-                linewidth=0.8, linestyle="--")
+        ax.plot(
+            rec_grid[mask],
+            p_iso[mask],
+            color="lightgrey",
+            linewidth=0.8,
+            linestyle="--",
+        )
         idx = np.where(mask)[0]
         if len(idx):
             mid = idx[len(idx) // 2]
-            ax.annotate(f"F1={f1_val:.1f}",
-                        (rec_grid[mid], p_iso[mid]),
-                        fontsize=7, color="grey", ha="center")
+            ax.annotate(
+                f"F1={f1_val:.1f}",
+                (rec_grid[mid], p_iso[mid]),
+                fontsize=7,
+                color="grey",
+                ha="center",
+            )
 
     ax.set_xlabel("Recall")
     ax.set_ylabel("Precision")
@@ -366,15 +419,27 @@ def fig12_summary_table():
     """Text-table figure: mean±std of AUC/F1/Precision/Recall for all 22 experiments."""
     experiments = [
         "CleanRun_Simple",
-        "Attack_SignFlip_10pct", "Attack_SignFlip_20pct", "Attack_SignFlip_40pct",
-        "Attack_LabelFlip_10pct", "Attack_LabelFlip_20pct", "Attack_LabelFlip_40pct",
-        "Attack_ModelReplace_10pct", "Attack_ModelReplace_20pct", "Attack_ModelReplace_40pct",
-        "Ablation_NoL1_Clean", "Ablation_NoL1_SignFlip20pct",
-        "Ablation_NoL1_LabelFlip20pct", "Ablation_NoL1_ModelReplace20pct",
-        "Ablation_NoL2_Clean", "Ablation_NoL2_SignFlip20pct",
-        "Ablation_NoL2_LabelFlip20pct", "Ablation_NoL2_ModelReplace20pct",
-        "Ablation_NoL3_Clean", "Ablation_NoL3_SignFlip20pct",
-        "Ablation_NoL3_LabelFlip20pct", "Ablation_NoL3_ModelReplace20pct",
+        "Attack_SignFlip_10pct",
+        "Attack_SignFlip_20pct",
+        "Attack_SignFlip_40pct",
+        "Attack_LabelFlip_10pct",
+        "Attack_LabelFlip_20pct",
+        "Attack_LabelFlip_40pct",
+        "Attack_ModelReplace_10pct",
+        "Attack_ModelReplace_20pct",
+        "Attack_ModelReplace_40pct",
+        "Ablation_NoL1_Clean",
+        "Ablation_NoL1_SignFlip20pct",
+        "Ablation_NoL1_LabelFlip20pct",
+        "Ablation_NoL1_ModelReplace20pct",
+        "Ablation_NoL2_Clean",
+        "Ablation_NoL2_SignFlip20pct",
+        "Ablation_NoL2_LabelFlip20pct",
+        "Ablation_NoL2_ModelReplace20pct",
+        "Ablation_NoL3_Clean",
+        "Ablation_NoL3_SignFlip20pct",
+        "Ablation_NoL3_LabelFlip20pct",
+        "Ablation_NoL3_ModelReplace20pct",
     ]
     cols = ["AUC", "F1", "Prec", "Rec", "n"]
     col_keys = ["auc", "f1", "precision", "recall"]
@@ -395,7 +460,8 @@ def fig12_summary_table():
     fig, ax = plt.subplots(figsize=(16, 10))
     fig.suptitle(
         f"Seed Sweep Summary — Mean ± Std (seeds 45–55, up to {len(SEEDS)} per exp)",
-        fontsize=12, fontweight="bold"
+        fontsize=12,
+        fontweight="bold",
     )
     ax.axis("off")
 
@@ -437,25 +503,44 @@ if __name__ == "__main__":
     fig_attack_rounds("SignFlip", "SignFlip", ["10pct", "20pct"], "fig4_signflip_auc_rounds.png")
 
     print("Fig 5: LabelFlip AUC over rounds")
-    fig_attack_rounds("LabelFlip", "LabelFlip", ["10pct", "20pct", "40pct"], "fig5_labelflip_auc_rounds.png")
+    fig_attack_rounds(
+        "LabelFlip",
+        "LabelFlip",
+        ["10pct", "20pct", "40pct"],
+        "fig5_labelflip_auc_rounds.png",
+    )
 
     print("Fig 6: ModelReplace AUC over rounds")
-    fig_attack_rounds("ModelReplace", "ModelReplace", ["10pct", "20pct", "40pct"], "fig6_modelreplace_auc_rounds.png")
+    fig_attack_rounds(
+        "ModelReplace",
+        "ModelReplace",
+        ["10pct", "20pct", "40pct"],
+        "fig6_modelreplace_auc_rounds.png",
+    )
 
     print("Fig 7: Ablation AUC bar")
-    fig_ablation_bar("auc",       "AUC (final round, mean over seeds)",
-                     "fig7_ablation_auc_bar.png",
-                     "Ablation Study — Final AUC (Layer Removal × Attack Condition)")
+    fig_ablation_bar(
+        "auc",
+        "AUC (final round, mean over seeds)",
+        "fig7_ablation_auc_bar.png",
+        "Ablation Study — Final AUC (Layer Removal × Attack Condition)",
+    )
 
     print("Fig 8: Ablation F1 bar")
-    fig_ablation_bar("f1",        "F1 (final round, mean over seeds)",
-                     "fig8_ablation_f1_bar.png",
-                     "Ablation Study — Final F1 (Layer Removal × Attack Condition)")
+    fig_ablation_bar(
+        "f1",
+        "F1 (final round, mean over seeds)",
+        "fig8_ablation_f1_bar.png",
+        "Ablation Study — Final F1 (Layer Removal × Attack Condition)",
+    )
 
     print("Fig 9: Ablation Recall bar")
-    fig_ablation_bar("recall",    "Recall (final round, mean over seeds)",
-                     "fig9_ablation_recall_bar.png",
-                     "Ablation Study — Final Recall (Layer Removal × Attack Condition)")
+    fig_ablation_bar(
+        "recall",
+        "Recall (final round, mean over seeds)",
+        "fig9_ablation_recall_bar.png",
+        "Ablation Study — Final Recall (Layer Removal × Attack Condition)",
+    )
 
     print("Fig 10: Per-seed AUC variance")
     fig10_seed_variance()

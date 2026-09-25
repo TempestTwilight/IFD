@@ -1,20 +1,22 @@
 """
 B6: FLTrust [Cao et al., NDSS 2021]
 """
+
 import torch
-from typing import List, Optional
 
 
-def fltrust(gradients: List[torch.Tensor], server_gradient: Optional[torch.Tensor] = None) -> torch.Tensor:
+def fltrust(
+    gradients: list[torch.Tensor], server_gradient: torch.Tensor | None = None
+) -> torch.Tensor:
     """
     FLTrust Defense using trusted server root dataset gradient.
-    
+
     Args:
         gradients: List of client gradient tensors
         server_gradient: Trusted server gradient vector (if None, mean honest fallback)
     """
     stacked = torch.stack([g.flatten().float() for g in gradients])
-    N, d = stacked.shape
+    N, _d = stacked.shape
 
     if server_gradient is None:
         g0 = stacked.mean(dim=0)

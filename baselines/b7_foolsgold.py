@@ -1,11 +1,11 @@
 """
 B7: FoolsGold [Fung et al., 2020]
 """
+
 import torch
-from typing import List
 
 
-def foolsgold(gradients: List[torch.Tensor]) -> torch.Tensor:
+def foolsgold(gradients: list[torch.Tensor]) -> torch.Tensor:
     """
     FoolsGold Sybil defense based on pairwise gradient cosine similarity.
     """
@@ -31,8 +31,8 @@ def foolsgold(gradients: List[torch.Tensor]) -> torch.Tensor:
 
     # Diversity score a_i = 1 - max_j!=i S_ij
     alpha = 1.0 - torch.clamp(max_sim, 0.0, 1.0)
-    
+
     # Softmax / rescale weighting
     weights = torch.softmax(alpha * 5.0, dim=0)
-    
+
     return (stacked * weights.unsqueeze(1)).sum(dim=0)
