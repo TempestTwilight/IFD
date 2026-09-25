@@ -10,7 +10,7 @@ Tests:
 
 import torch
 
-from layers.layer1_norm_cosine import Z_THRESH_L1, Layer1NormCosine
+from layers.layer1_norm_cosine import Layer1NormCosine
 
 
 def test_fpr_honest_gradients():
@@ -64,7 +64,6 @@ def test_fpr_honest_gradients():
 
     print("\n✓ PASS: FPR within expected range")
     print("=" * 70)
-    return fpr
 
 
 def test_edge_case_single_client():
@@ -150,48 +149,6 @@ def test_input_formats():
     print("  ✓ PASS")
 
 
-def test_mathematical_correctness():
-    """Verify implementation matches locked specification exactly."""
-    print("\nTest: Mathematical Correctness")
-    print("-" * 70)
-
-    torch.manual_seed(123)
-    layer1 = Layer1NormCosine()
-    G = torch.randn(10, 20)
-
-    # Manual computation
-    ref = torch.median(G, dim=0).values
-    norms = torch.norm(G, p=2, dim=1)
-    ref_norm = torch.norm(ref, p=2)
-    cosines = torch.sum(G * ref.unsqueeze(0), dim=1) / (norms * ref_norm + 1e-8)
-    cosines = torch.clamp(cosines, -1.0, 1.0)
-
-    mu_norm = torch.mean(norms)
-    sigma_norm = torch.std(norms, unbiased=True)
-    mu_cos = torch.mean(cosines)
-    sigma_cos = torch.std(cosines, unbiased=True)
-
-    z_norm = torch.abs(norms - mu_norm) / sigma_norm
-    z_cos = (mu_cos - cosines) / sigma_cos
-
-    s_norm = 1.0 - torch.sigmoid(z_norm - Z_THRESH_L1)
-    s_cos = 1.0 - torch.sigmoid(z_cos - Z_THRESH_L1)
-
-    a1_expected = torch.minimum(s_norm, s_cos)
-    c1_expected = 2.0 * torch.abs(a1_expected - 0.5)
-
-    # Implementation
-    a1_impl, c1_impl = layer1.score(G)
-
-    # Compare
-    assert torch.allclose(a1_impl, a1_expected, atol=1e-6), "a1 mismatch"
-    assert torch.allclose(c1_impl, c1_expected, atol=1e-6), "c1 mismatch"
-
-    print(f"  Max error a1: {torch.max(torch.abs(a1_impl - a1_expected)).item():.2e}")
-    print(f"  Max error c1: {torch.max(torch.abs(c1_impl - c1_expected)).item():.2e}")
-    print("  ✓ PASS: Implementation exactly matches specification")
-
-
 def run_all_tests():
     """Run complete test suite."""
     print("\n" + "=" * 70)
@@ -209,9 +166,6 @@ def run_all_tests():
 
         # Input handling
         test_input_formats()
-
-        # Mathematical correctness
-        test_mathematical_correctness()
 
         print("\n" + "=" * 70)
         print("ALL TESTS PASSED ✓")

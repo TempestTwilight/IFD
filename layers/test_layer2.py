@@ -49,8 +49,6 @@ def test_inliers():
         else f"✗ FAIL: mean(a2) = {mean_a2:.4f} ≤ 0.9"
     )
 
-    return passed
-
 
 def test_outliers():
     """Test that adversarial gradients orthogonal to honest ones get low a2 scores."""
@@ -115,8 +113,6 @@ def test_outliers():
         else f"✗ FAIL: some adversarial a2 ≥ 0.3 (max={max_adv_a2:.4f})"
     )
 
-    return passed
-
 
 def test_edge_case_n1():
     """Test N=1 edge case: should return a2=1.0, c2=1.0."""
@@ -137,8 +133,6 @@ def test_edge_case_n1():
     passed = (a2.item() == 1.0) and (c2.item() == 1.0)
 
     print("\n✓ PASS: a2=1.0, c2=1.0" if passed else "✗ FAIL: expected a2=1.0, c2=1.0")
-
-    return passed
 
 
 def test_edge_case_n2():
@@ -164,8 +158,6 @@ def test_edge_case_n2():
         "\n✓ PASS: all a2=1.0, all c2=1.0" if passed else "✗ FAIL: expected all a2=1.0, all c2=1.0"
     )
 
-    return passed
-
 
 def test_edge_case_zero_variance():
     """Test zero-variance peer matrix: all gradients identical."""
@@ -188,8 +180,6 @@ def test_edge_case_zero_variance():
     passed = bool((a2 == 1.0).all().item())
 
     print("\n✓ PASS: all a2=1.0" if passed else "✗ FAIL: expected all a2=1.0")
-
-    return passed
 
 
 def test_edge_case_near_zero_variance():
@@ -218,8 +208,6 @@ def test_edge_case_near_zero_variance():
     passed = a2.mean().item() > 0.95
 
     print("\n✓ PASS: mean(a2) > 0.95" if passed else "✗ FAIL: mean(a2) ≤ 0.95")
-
-    return passed
 
 
 def main():
