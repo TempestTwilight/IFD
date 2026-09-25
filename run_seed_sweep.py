@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Seed sweep runner.
 
@@ -29,16 +29,13 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
-
+from datetime import UTC, datetime
 
 # ============================================================================
 # Configuration
 # ============================================================================
 
-SEEDS = list(
-    range(45, 56)
-)
+SEEDS = list(range(45, 56))
 
 BASE_RESULTS = "./results/Seed_Sweep2"
 
@@ -54,22 +51,17 @@ SEED_TIMEOUT_MINUTES = float(
     )
 )
 
-SEED_TIMEOUT_SECONDS = (
-    SEED_TIMEOUT_MINUTES * 60
-)
+SEED_TIMEOUT_SECONDS = SEED_TIMEOUT_MINUTES * 60
 
 
 # ============================================================================
 # Utility
 # ============================================================================
 
+
 def ts():
 
-    return datetime.now(
-        timezone.utc
-    ).isoformat(
-        timespec="seconds"
-    )
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def log(
@@ -83,10 +75,7 @@ def log(
     )
 
     if fh:
-
-        fh.write(
-            message + "\n"
-        )
+        fh.write(message + "\n")
 
         fh.flush()
 
@@ -107,6 +96,7 @@ def seed_complete(
 # Process termination
 # ============================================================================
 
+
 def terminate_process_tree(
     process,
     seed_log,
@@ -116,65 +106,43 @@ def terminate_process_tree(
         return
 
     try:
-
-        seed_log.write(
-            f"\n[{ts()}] "
-            "Terminating seed process tree.\n"
-        )
+        seed_log.write(f"\n[{ts()}] Terminating seed process tree.\n")
 
         seed_log.flush()
 
         if os.name == "posix":
-
             os.killpg(
                 process.pid,
                 signal.SIGTERM,
             )
 
         else:
-
             process.terminate()
 
         try:
-
-            process.wait(
-                timeout=15
-            )
+            process.wait(timeout=15)
 
         except subprocess.TimeoutExpired:
-
-            seed_log.write(
-                f"[{ts()}] "
-                "Forcing seed process termination.\n"
-            )
+            seed_log.write(f"[{ts()}] Forcing seed process termination.\n")
 
             seed_log.flush()
 
             if os.name == "posix":
-
                 os.killpg(
                     process.pid,
                     signal.SIGKILL,
                 )
 
             else:
-
                 process.kill()
 
-            process.wait(
-                timeout=15
-            )
+            process.wait(timeout=15)
 
     except ProcessLookupError:
         pass
 
     except Exception as exc:
-
-        seed_log.write(
-            f"[{ts()}] "
-            f"Termination error: "
-            f"{type(exc).__name__}: {exc}\n"
-        )
+        seed_log.write(f"[{ts()}] Termination error: {type(exc).__name__}: {exc}\n")
 
         seed_log.flush()
 
@@ -182,6 +150,7 @@ def terminate_process_tree(
 # ============================================================================
 # Run one seed
 # ============================================================================
+
 
 def run_seed(
     seed,
@@ -202,14 +171,8 @@ def run_seed(
     # Resume
     # ------------------------------------------------------------------------
 
-    if seed_complete(
-        results_dir
-    ):
-
-        message = (
-            f"Seed {seed:3d}: "
-            "SKIPPED — already complete."
-        )
+    if seed_complete(results_dir):
+        message = f"Seed {seed:3d}: SKIPPED — already complete."
 
         log(
             message,
@@ -245,31 +208,21 @@ def run_seed(
     start = time.time()
 
     try:
-
         with open(
             seed_log_path,
             "a",
             encoding="utf-8",
         ) as seed_log:
-
             seed_log.write(
-                "\n"
-                + "=" * 80
-                + "\n"
-                + f"SEED {seed} STARTED {ts()}\n"
-                + f"TIMEOUT: "
-                f"{SEED_TIMEOUT_MINUTES:.1f} min\n"
-                + "=" * 80
-                + "\n"
+                "\n" + "=" * 80 + "\n" + f"SEED {seed} STARTED {ts()}\n" + f"TIMEOUT: "
+                f"{SEED_TIMEOUT_MINUTES:.1f} min\n" + "=" * 80 + "\n"
             )
 
             seed_log.flush()
 
             env = os.environ.copy()
 
-            env["RESULTS_DIR"] = (
-                results_dir
-            )
+            env["RESULTS_DIR"] = results_dir
 
             env["SEED"] = str(seed)
 
@@ -286,19 +239,10 @@ def run_seed(
             }
 
             if os.name == "posix":
-
-                kwargs[
-                    "start_new_session"
-                ] = True
+                kwargs["start_new_session"] = True
 
             else:
-
-                kwargs[
-                    "creationflags"
-                ] = (
-                    subprocess
-                    .CREATE_NEW_PROCESS_GROUP
-                )
+                kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
 
             process = subprocess.Popen(
                 cmd,
@@ -306,26 +250,14 @@ def run_seed(
             )
 
             try:
-
-                return_code = process.wait(
-                    timeout=SEED_TIMEOUT_SECONDS
-                )
+                return_code = process.wait(timeout=SEED_TIMEOUT_SECONDS)
 
             except subprocess.TimeoutExpired:
+                elapsed = time.time() - start
 
-                elapsed = (
-                    time.time() - start
-                )
+                message = f"Seed {seed:3d}: TIMEOUT — {elapsed / 60:.1f} min"
 
-                message = (
-                    f"Seed {seed:3d}: TIMEOUT — "
-                    f"{elapsed / 60:.1f} min"
-                )
-
-                seed_log.write(
-                    f"\n[{ts()}] "
-                    f"{message}\n"
-                )
+                seed_log.write(f"\n[{ts()}] {message}\n")
 
                 seed_log.flush()
 
@@ -341,27 +273,16 @@ def run_seed(
 
                 return message
 
-            elapsed = (
-                time.time() - start
-            )
+            elapsed = time.time() - start
 
             # ----------------------------------------------------------------
             # Verify seed completion marker.
             # ----------------------------------------------------------------
 
-            if (
-                return_code == 0
-                and seed_complete(results_dir)
-            ):
-
-                message = (
-                    f"Seed {seed:3d}: SUCCESS — "
-                    f"{elapsed / 60:.1f} min — "
-                    f"finished {ts()}"
-                )
+            if return_code == 0 and seed_complete(results_dir):
+                message = f"Seed {seed:3d}: SUCCESS — {elapsed / 60:.1f} min — finished {ts()}"
 
             elif return_code == 0:
-
                 message = (
                     f"Seed {seed:3d}: FAILED — "
                     "run_experiments.py returned 0 "
@@ -369,7 +290,6 @@ def run_seed(
                 )
 
             else:
-
                 message = (
                     f"Seed {seed:3d}: FAILED "
                     f"(rc={return_code}) — "
@@ -377,9 +297,7 @@ def run_seed(
                     f"finished {ts()}"
                 )
 
-            seed_log.write(
-                f"\n[{ts()}] {message}\n"
-            )
+            seed_log.write(f"\n[{ts()}] {message}\n")
 
             seed_log.flush()
 
@@ -391,16 +309,9 @@ def run_seed(
             return message
 
     except Exception as exc:
+        elapsed = time.time() - start
 
-        elapsed = (
-            time.time() - start
-        )
-
-        message = (
-            f"Seed {seed:3d}: CRASHED — "
-            f"{type(exc).__name__}: {exc} — "
-            f"{elapsed / 60:.1f} min"
-        )
+        message = f"Seed {seed:3d}: CRASHED — {type(exc).__name__}: {exc} — {elapsed / 60:.1f} min"
 
         log(
             message,
@@ -413,6 +324,7 @@ def run_seed(
 # ============================================================================
 # Main
 # ============================================================================
+
 
 def main():
 
@@ -428,7 +340,6 @@ def main():
         "a",
         encoding="utf-8",
     ) as sweep_log:
-
         log(
             "\n" + "=" * 80,
             sweep_log,
@@ -445,8 +356,7 @@ def main():
         )
 
         log(
-            f"Seed timeout: "
-            f"{SEED_TIMEOUT_MINUTES:.1f} min",
+            f"Seed timeout: {SEED_TIMEOUT_MINUTES:.1f} min",
             sweep_log,
         )
 
@@ -456,15 +366,12 @@ def main():
         )
 
         for seed in SEEDS:
-
             summary = run_seed(
                 seed,
                 sweep_log,
             )
 
-            summaries.append(
-                summary
-            )
+            summaries.append(summary)
 
         # --------------------------------------------------------------------
         # Final sweep summary
@@ -486,7 +393,6 @@ def main():
         )
 
         for summary in summaries:
-
             log(
                 summary,
                 sweep_log,
@@ -499,29 +405,21 @@ def main():
     incomplete = []
 
     for seed in SEEDS:
-
         results_dir = os.path.join(
             BASE_RESULTS,
             f"seed_{seed}",
         )
 
-        if not seed_complete(
-            results_dir
-        ):
-
-            incomplete.append(
-                seed
-            )
+        if not seed_complete(results_dir):
+            incomplete.append(seed)
 
     if incomplete:
-
         print(
             "\nSweep finished with incomplete seeds:",
             flush=True,
         )
 
         for seed in incomplete:
-
             print(
                 f"  - seed {seed}",
                 flush=True,
@@ -542,15 +440,10 @@ def main():
 # ============================================================================
 
 if __name__ == "__main__":
-
     try:
-
-        sys.exit(
-            main()
-        )
+        sys.exit(main())
 
     except KeyboardInterrupt:
-
         print(
             "\nSeed sweep interrupted.",
             flush=True,
@@ -559,10 +452,8 @@ if __name__ == "__main__":
         sys.exit(130)
 
     except Exception as exc:
-
         print(
-            f"\nFATAL ERROR: "
-            f"{type(exc).__name__}: {exc}",
+            f"\nFATAL ERROR: {type(exc).__name__}: {exc}",
             flush=True,
         )
 

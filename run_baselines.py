@@ -30,8 +30,7 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
-
+from datetime import UTC, datetime
 
 # ============================================================================
 # Configuration
@@ -39,19 +38,19 @@ from datetime import datetime, timezone
 
 RESULTS_DIR = os.environ.get("RESULTS_DIR", "./results")
 NUM_CLIENTS = int(os.environ.get("NUM_CLIENTS", "10"))
-NUM_ROUNDS  = int(os.environ.get("NUM_ROUNDS",  "50"))
-NROWS       = int(os.environ.get("NROWS",       "150000"))
+NUM_ROUNDS = int(os.environ.get("NUM_ROUNDS", "50"))
+NROWS = int(os.environ.get("NROWS", "150000"))
 
 BATCH_SIZE = 512
-EPOCHS     = 10
+EPOCHS = 10
 
-RATIOS  = [0.10, 0.20, 0.40]
+RATIOS = [0.10, 0.20, 0.40]
 
 ATTACKS = ["sign_flip", "label_flip", "model_replace"]
 
 ATTACK_LABELS = {
-    "sign_flip":     "SignFlip",
-    "label_flip":    "LabelFlip",
+    "sign_flip": "SignFlip",
+    "label_flip": "LabelFlip",
     "model_replace": "ModelReplace",
 }
 
@@ -68,12 +67,18 @@ os.makedirs(RESULTS_DIR, exist_ok=True)
 LOG_PATH = os.path.join(RESULTS_DIR, "baselines_experiment_log.txt")
 
 BASE_CMD = [
-    sys.executable, "train.py",
-    "--num-clients",      str(NUM_CLIENTS),
-    "--num-rounds",       str(NUM_ROUNDS),
-    "--nrows",            str(NROWS),
-    "--batch-size",       str(BATCH_SIZE),
-    "--epochs-per-round", str(EPOCHS),
+    sys.executable,
+    "train.py",
+    "--num-clients",
+    str(NUM_CLIENTS),
+    "--num-rounds",
+    str(NUM_ROUNDS),
+    "--nrows",
+    str(NROWS),
+    "--batch-size",
+    str(BATCH_SIZE),
+    "--epochs-per-round",
+    str(EPOCHS),
 ]
 
 
@@ -88,8 +93,9 @@ results_summary = []
 # Utility
 # ============================================================================
 
+
 def timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def write_log(message: str) -> None:
@@ -125,6 +131,7 @@ def is_complete(path: str) -> bool:
 # Ray cleanup
 # ============================================================================
 
+
 def cleanup_local_ray(reason: str = "") -> None:
     if os.environ.get("RAY_ADDRESS", "").strip():
         return
@@ -154,6 +161,7 @@ def cleanup_local_ray(reason: str = "") -> None:
 # Run one experiment
 # ============================================================================
 
+
 def run(baseline: str, label: str, extra_args: list) -> bool:
     baseline_results_dir = os.path.join(RESULTS_DIR, "baselines", baseline)
     os.makedirs(baseline_results_dir, exist_ok=True)
@@ -169,11 +177,18 @@ def run(baseline: str, label: str, extra_args: list) -> bool:
 
     cleanup_local_ray(reason=f"before {baseline}/{label}")
 
-    cmd = BASE_CMD + [
-        "--baseline",    baseline,
-        "--run-label",   label,
-        "--results-dir", baseline_results_dir,
-    ] + extra_args
+    cmd = (
+        BASE_CMD
+        + [
+            "--baseline",
+            baseline,
+            "--run-label",
+            label,
+            "--results-dir",
+            baseline_results_dir,
+        ]
+        + extra_args
+    )
 
     separator = "=" * 78
     header = (
@@ -208,14 +223,10 @@ def run(baseline: str, label: str, extra_args: list) -> bool:
     elapsed = time.time() - start_time
     cleanup_local_ray(reason=f"after {baseline}/{label}")
 
-    status  = "SUCCESS" if return_code == 0 else f"FAILED (rc={return_code})"
+    status = "SUCCESS" if return_code == 0 else f"FAILED (rc={return_code})"
     success = return_code == 0
 
-    summary = (
-        f"[{baseline}/{label}] {status} � "
-        f"{elapsed / 60:.1f} min � "
-        f"finished {timestamp()}"
-    )
+    summary = f"[{baseline}/{label}] {status} � {elapsed / 60:.1f} min � finished {timestamp()}"
     print(f"\n{summary}\n", flush=True)
     write_log(summary)
     results_summary.append(summary)
@@ -225,6 +236,7 @@ def run(baseline: str, label: str, extra_args: list) -> bool:
 # ============================================================================
 # Main
 # ============================================================================
+
 
 def main() -> int:
 
@@ -240,11 +252,8 @@ def main() -> int:
         f.write("=" * 78 + "\n\n")
 
     for baseline in BASELINES:
-
         print(
-            f"\n\n{'#' * 78}\n"
-            f"  BASELINE: {baseline.upper()}\n"
-            f"{'#' * 78}\n",
+            f"\n\n{'#' * 78}\n  BASELINE: {baseline.upper()}\n{'#' * 78}\n",
             flush=True,
         )
         write_log(f"\n### BASELINE: {baseline} ###")
@@ -260,24 +269,26 @@ def main() -> int:
                     baseline,
                     label,
                     [
-                        "--num-adversaries", str(n_adv(ratio)),
-                        "--attack-type",     attack,
+                        "--num-adversaries",
+                        str(n_adv(ratio)),
+                        "--attack-type",
+                        attack,
                     ],
                 )
 
     # --------------------------------------------------------------------------
     # Final summary
     # --------------------------------------------------------------------------
-    total     = len(results_summary)
-    skipped   = sum("SKIPPED"  in line for line in results_summary)
-    failed    = sum("FAILED"   in line for line in results_summary)
-    succeeded = sum("SUCCESS"  in line for line in results_summary)
+    total = len(results_summary)
+    skipped = sum("SKIPPED" in line for line in results_summary)
+    failed = sum("FAILED" in line for line in results_summary)
+    succeeded = sum("SUCCESS" in line for line in results_summary)
 
     print("\n\n=== ALL BASELINE EXPERIMENTS COMPLETE ===", flush=True)
     print(f"Total:     {total}", flush=True)
     print(f"Succeeded: {succeeded}", flush=True)
-    print(f"Skipped:   {skipped}",   flush=True)
-    print(f"Failed:    {failed}",    flush=True)
+    print(f"Skipped:   {skipped}", flush=True)
+    print(f"Failed:    {failed}", flush=True)
 
     write_log("\n" + "=" * 78)
     write_log("FINAL SUMMARY")

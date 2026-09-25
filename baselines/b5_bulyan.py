@@ -1,14 +1,14 @@
 """
 B5: Bulyan [El Mhamdi et al., ICML 2018]
 """
+
 import torch
-from typing import List
 
 
-def bulyan(gradients: List[torch.Tensor], f: int = 1) -> torch.Tensor:
+def bulyan(gradients: list[torch.Tensor], f: int = 1) -> torch.Tensor:
     """
     Bulyan Defense: Multi-Krum selection + Trimmed Mean.
-    
+
     Args:
         gradients: List of client gradient tensors
         f: Number of assumed Byzantine clients
@@ -16,7 +16,7 @@ def bulyan(gradients: List[torch.Tensor], f: int = 1) -> torch.Tensor:
     stacked = torch.stack([g.flatten().float() for g in gradients])
     N = stacked.shape[0]
 
-    if N <= 4 * f + 2:
+    if 4 * f + 2 >= N:
         # Fallback if N too small for Bulyan bound N >= 4f + 3
         return stacked.mean(dim=0)
 

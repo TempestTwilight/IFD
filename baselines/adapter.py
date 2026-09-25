@@ -2,7 +2,6 @@
 Unified Baseline Adapter wrapping all baselines B1–B9 into a common interface.
 """
 
-from typing import List, Optional, Union
 import torch
 
 from baselines.b1_fedavg import fedavg
@@ -19,7 +18,7 @@ from baselines.b9_fldetector import FLDetector
 class BaselineAdapter:
     """
     Unified adapter for baseline federated aggregation defenses B1–B9.
-    
+
     Supported baseline names:
       - "b1_fedavg" / "fedavg"
       - "b2_krum" / "krum"
@@ -41,13 +40,13 @@ class BaselineAdapter:
 
     def aggregate(
         self,
-        gradients: List[torch.Tensor],
-        client_ids: Optional[List[str]] = None,
-        server_gradient: Optional[torch.Tensor] = None,
+        gradients: list[torch.Tensor],
+        client_ids: list[str] | None = None,
+        server_gradient: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Aggregate client gradients using chosen baseline.
-        
+
         Returns:
             g_aggregated: 1D torch Tensor
         """

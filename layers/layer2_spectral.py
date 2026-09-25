@@ -1,7 +1,6 @@
 import warnings
-from typing import List, Optional, Tuple, Union
+
 import torch
-import torch.nn.functional as F
 
 
 class Layer2Spectral:
@@ -26,7 +25,7 @@ class Layer2Spectral:
         self,
         gamma: float = 0.95,
         epsilon: float = 1e-8,
-        z_thresh: Optional[float] = None,
+        z_thresh: float | None = None,
         use_log_transform: bool = False,
     ):
         self.gamma = gamma
@@ -44,8 +43,8 @@ class Layer2Spectral:
                 )
 
     def score(
-        self, gradients: Union[List[torch.Tensor], torch.Tensor]
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        self, gradients: list[torch.Tensor] | torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         if isinstance(gradients, list):
             gradients = torch.stack([g.flatten() for g in gradients])
         elif gradients.dim() == 1:
@@ -69,8 +68,8 @@ class Layer2Spectral:
 
         # ---- Step 1: Pre-compute Full Gram Matrix (O(N^2 d) once) ----
         K_full = gradients @ gradients.T  # shape: (N, N)
-        row_sums = K_full.sum(dim=1)      # shape: (N,)
-        total_sum = K_full.sum()          # scalar
+        row_sums = K_full.sum(dim=1)  # shape: (N,)
+        total_sum = K_full.sum()  # scalar
 
         # ---- Step 2: Leave-One-Out (LOO) via Closed-Form Submatrix Slicing ----
         for i in range(N):
@@ -93,13 +92,13 @@ class Layer2Spectral:
             try:
                 L, U = torch.linalg.eigh(K_peer)
             except Exception:
-                reconstruction_errors[i] = float('inf')
+                reconstruction_errors[i] = float("inf")
                 continue
 
             L = torch.flip(L, dims=[0])
             U = torch.flip(U, dims=[1])
 
-            valid_mask = L > self.epsilon
+            valid_mask = self.epsilon < L
             if not valid_mask.any():
                 reconstruction_errors[i] = torch.sqrt(torch.clamp(g_i_norm_sq, min=0.0))
                 continue
@@ -123,7 +122,7 @@ class Layer2Spectral:
             proj_y = U_k.T @ y_i  # (k,)
             coeffs = proj_y / torch.sqrt(L_k)  # (k,)
 
-            proj_norm_sq = torch.sum(coeffs ** 2)
+            proj_norm_sq = torch.sum(coeffs**2)
             err_sq = torch.clamp(g_i_norm_sq - proj_norm_sq, min=0.0)
             reconstruction_errors[i] = torch.sqrt(err_sq)
 
@@ -145,7 +144,7 @@ class Layer2Spectral:
         abs_deviations = torch.abs(scores_to_norm - median_e)
         MAD = torch.median(abs_deviations)
 
-        if MAD < self.epsilon:
+        if self.epsilon > MAD:
             return torch.ones(N, device=device, dtype=dtype), torch.ones(
                 N, device=device, dtype=dtype
             )
@@ -160,6 +159,6 @@ class Layer2Spectral:
         return a2, c2
 
     def __call__(
-        self, gradients: Union[List[torch.Tensor], torch.Tensor]
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        self, gradients: list[torch.Tensor] | torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         return self.score(gradients)

@@ -7,13 +7,12 @@ onto the peer subspace, reconstruction error is guaranteed to be near zero.
 """
 
 import torch
-from typing import List, Optional
 
 
 class SpectralMatching:
     """
     Spectral Matching Attack.
-    
+
     Projects desired target direction onto top-k principal components of peer subspace
     to evade SVD reconstruction error anomaly detection in Layer 2.
     """
@@ -27,18 +26,18 @@ class SpectralMatching:
 
     def generate_gradient(
         self,
-        peer_gradients: List[torch.Tensor],
+        peer_gradients: list[torch.Tensor],
         target_direction: torch.Tensor,
-        top_k: Optional[int] = None,
+        top_k: int | None = None,
     ) -> torch.Tensor:
         """
         Generate attack gradient lying inside peer subspace.
-        
+
         Args:
             peer_gradients: List of honest client gradient tensors in current round
             target_direction: 1D torch Tensor representing desired target payload
             top_k: Optional manual top-k component count override
-            
+
         Returns:
             g_adv: 1D torch Tensor gradient vector with zero peer subspace reconstruction error
         """
@@ -54,11 +53,11 @@ class SpectralMatching:
         centered_peers = stacked_peers - peer_mean
 
         # SVD on centered peer matrix
-        U, S, Vh = torch.linalg.svd(centered_peers, full_matrices=False)
+        _U, S, Vh = torch.linalg.svd(centered_peers, full_matrices=False)
 
         # Select k components explaining gamma variance
         if top_k is None:
-            var_ratio = (S ** 2) / ((S ** 2).sum() + 1e-8)
+            var_ratio = (S**2) / ((S**2).sum() + 1e-8)
             cum_var = torch.cumsum(var_ratio, dim=0)
             k = int(torch.searchsorted(cum_var, self.gamma).item()) + 1
             k = min(k, min(N - 1, d))
@@ -70,7 +69,7 @@ class SpectralMatching:
         # Project centered target onto Vk
         centered_target = target - peer_mean.squeeze(0)
         proj_coeff = torch.matmul(centered_target, Vk.T)  # shape (k,)
-        centered_proj = torch.matmul(proj_coeff, Vk)      # strictly in span(Vk)
+        centered_proj = torch.matmul(proj_coeff, Vk)  # strictly in span(Vk)
 
         # Scale centered_proj to typical peer deviation scale
         avg_peer_dev = torch.norm(centered_peers, dim=1).mean()

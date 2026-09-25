@@ -1,8 +1,8 @@
 """
 B9: FLDetector [Zhang et al., CCS 2022]
 """
+
 import torch
-from typing import List, Dict, Optional
 
 
 class FLDetector:
@@ -12,9 +12,11 @@ class FLDetector:
 
     def __init__(self, threshold: float = 0.5):
         self.threshold = threshold
-        self.history: Dict[str, torch.Tensor] = {}
+        self.history: dict[str, torch.Tensor] = {}
 
-    def aggregate(self, gradients: List[torch.Tensor], client_ids: Optional[List[str]] = None) -> torch.Tensor:
+    def aggregate(
+        self, gradients: list[torch.Tensor], client_ids: list[str] | None = None
+    ) -> torch.Tensor:
         stacked = torch.stack([g.flatten().float() for g in gradients])
         N, d = stacked.shape
 

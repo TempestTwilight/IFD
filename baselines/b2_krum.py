@@ -1,14 +1,19 @@
 """
 B2: Krum & Multi-Krum [Blanchard et al., NeurIPS 2017]
 """
+
 import torch
-from typing import List, Optional
 
 
-def krum(gradients: List[torch.Tensor], f: int = 1, multi_krum: bool = False, m: Optional[int] = None) -> torch.Tensor:
+def krum(
+    gradients: list[torch.Tensor],
+    f: int = 1,
+    multi_krum: bool = False,
+    m: int | None = None,
+) -> torch.Tensor:
     """
     Krum / Multi-Krum Defense.
-    
+
     Args:
         gradients: List of client gradient tensors
         f: Number of assumed Byzantine clients
@@ -17,8 +22,8 @@ def krum(gradients: List[torch.Tensor], f: int = 1, multi_krum: bool = False, m:
     """
     stacked = torch.stack([g.flatten().float() for g in gradients])
     N = stacked.shape[0]
-    
-    if N <= 2 * f + 2:
+
+    if 2 * f + 2 >= N:
         # Fallback if N too small for Krum bound N >= 2f + 3
         return stacked.mean(dim=0)
 

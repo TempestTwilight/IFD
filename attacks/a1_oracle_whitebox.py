@@ -7,13 +7,12 @@ that maximizes alignment with target direction while evading cascade detection l
 """
 
 import torch
-from typing import List, Optional
 
 
 class OracleWhiteBoxPGD:
     """
     Oracle White-Box PGD Attack.
-    
+
     Optimizes adversarial gradient vector g_adv to maximize alignment with target_direction
     subject to passing Layer 1 (Norm/Cosine), Layer 2 (Spectral), and Layer 3 (Temporal).
     """
@@ -39,7 +38,7 @@ class OracleWhiteBoxPGD:
 
     def attack(
         self,
-        honest_gradients: List[torch.Tensor],
+        honest_gradients: list[torch.Tensor],
         target_direction: torch.Tensor,
         layer1=None,
         layer2=None,
@@ -48,7 +47,7 @@ class OracleWhiteBoxPGD:
     ) -> torch.Tensor:
         """
         Craft adversarial gradient g_adv.
-        
+
         Args:
             honest_gradients: List of 1D torch Tensors representing honest client gradients
             target_direction: 1D torch Tensor representing desired attack direction
@@ -56,7 +55,7 @@ class OracleWhiteBoxPGD:
             layer2: Instance of Layer2Spectral (optional)
             layer3: Instance of Layer3Temporal (optional)
             client_id: Identifier for adversary (for Layer 3 state)
-            
+
         Returns:
             g_adv: Crafted 1D adversarial gradient tensor
         """
@@ -70,7 +69,7 @@ class OracleWhiteBoxPGD:
 
         optimizer = torch.optim.Adam([g_adv], lr=self.step_size)
 
-        for step in range(self.num_steps):
+        for _step in range(self.num_steps):
             optimizer.zero_grad()
 
             # Loss: Maximize alignment with target direction
@@ -94,13 +93,13 @@ class OracleWhiteBoxPGD:
                 # Spectral projection penalty
                 # Peer matrix excluding g_adv is stacked_honest
                 peer_mat = stacked_honest - stacked_honest.mean(dim=0, keepdim=True)
-                U, S, Vh = torch.linalg.svd(peer_mat, full_matrices=False)
+                _U, S, Vh = torch.linalg.svd(peer_mat, full_matrices=False)
                 # Retain top 95% variance components
-                var_ratio = (S ** 2) / (S ** 2).sum()
+                var_ratio = (S**2) / (S**2).sum()
                 cum_var = torch.cumsum(var_ratio, dim=0)
                 k = int(torch.searchsorted(cum_var, 0.95).item()) + 1
                 Vk = Vh[:k, :]  # shape (k, d)
-                
+
                 proj = torch.matmul(g_adv, Vk.T)
                 recon = torch.matmul(proj, Vk)
                 recon_err = torch.norm(g_adv - recon)

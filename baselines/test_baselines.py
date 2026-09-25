@@ -3,7 +3,6 @@ Numerical Verification for Chunk 7: Baselines B1–B9
 """
 
 import torch
-import numpy as np
 
 from baselines.adapter import BaselineAdapter
 
@@ -37,12 +36,14 @@ def test_all_baselines():
     for name in baselines_to_test:
         adapter = BaselineAdapter(name)
         g_agg = adapter.aggregate(all_grads, client_ids=client_ids)
-        
+
         # Checks
-        assert g_agg.shape == (d,), f"[{name}] Output shape mismatch: expected ({d},), got {g_agg.shape}"
+        assert g_agg.shape == (d,), (
+            f"[{name}] Output shape mismatch: expected ({d},), got {g_agg.shape}"
+        )
         assert not torch.isnan(g_agg).any(), f"[{name}] Output contains NaN values"
         assert not torch.isinf(g_agg).any(), f"[{name}] Output contains Inf values"
-        
+
         cos_with_mu = (torch.sum(g_agg * mu) / (torch.norm(g_agg) * torch.norm(mu))).item()
         print(f"  {name:15s} -> shape: {list(g_agg.shape)}, cos(g_agg, mu): {cos_with_mu:+.4f}")
 

@@ -7,13 +7,14 @@ without triggering sudden cosine consistency drops in Layer 3.
 """
 
 import math
+
 import torch
 
 
 class TemporalGrinding:
     """
     Temporal Grinding Attack.
-    
+
     Gradually shifts gradient direction during warmup rounds to poison EMA trajectory
     before injecting full target payload.
     """
@@ -36,19 +37,19 @@ class TemporalGrinding:
     ) -> torch.Tensor:
         """
         Generate attack gradient for current round.
-        
+
         Args:
             round_num: Current federated learning round index (1-indexed)
             base_gradient: Honest gradient vector for current round
             target_direction: Malicious target direction vector
-            
+
         Returns:
             g_adv: 1D torch Tensor gradient vector
         """
         g_base = base_gradient.flatten().float()
         v_target = target_direction.flatten().float()
         norm_base = torch.norm(g_base) + 1e-8
-        
+
         unit_base = g_base / norm_base
         unit_target = v_target / (torch.norm(v_target) + 1e-8)
 

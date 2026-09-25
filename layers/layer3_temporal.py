@@ -23,17 +23,18 @@ Mathematical Specification:
 """
 
 import math
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any
+
 import torch
 
 
 class Layer3Temporal:
     """
     Dual-channel temporal consistency tracker for federated learning gradients.
-    
+
     Combines a fast local trajectory channel (CUSUM on deviation from client's own EMA)
     with an independent global consensus channel (CUSUM on deviation from robust median).
-    
+
     Args:
         alpha: Base EMA decay constant for local trajectory tracking (default: 0.1)
         maturity_rounds: Rounds required for full confidence (default: 20)
@@ -69,13 +70,13 @@ class Layer3Temporal:
         self.slope = slope
 
         # Per-client state: {client_id: {'trajectory': Tensor, 'cusum_local': float, 'cusum_global': float, 'rounds_seen': int}}
-        self.client_state: Dict[Any, Dict[str, Any]] = {}
+        self.client_state: dict[Any, dict[str, Any]] = {}
 
     def score(
         self,
-        gradients: Union[List[torch.Tensor], torch.Tensor],
-        client_ids: Union[List, torch.Tensor],
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        gradients: list[torch.Tensor] | torch.Tensor,
+        client_ids: list | torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Score current round gradients for temporal and global consistency.
 
@@ -99,7 +100,7 @@ class Layer3Temporal:
         N = len(client_ids)
         device = gradients.device
 
-        a3 = torch.full((N,), float('nan'), device=device)
+        a3 = torch.full((N,), float("nan"), device=device)
         c3 = torch.zeros(N, device=device)
 
         # Global consensus reference (coordinate-wise median)
@@ -133,7 +134,10 @@ class Layer3Temporal:
                 cos_local = self._cosine_similarity(g_current, trajectory_prev)
                 # Deviation from client's own history
                 d_local = 1.0 - cos_local
-                s_local = max(0.0, state["cusum_local"] + d_local - (self.mu0_local + self.k_local))
+                s_local = max(
+                    0.0,
+                    state["cusum_local"] + d_local - (self.mu0_local + self.k_local),
+                )
                 state["cusum_local"] = s_local
 
                 # Continuous anomaly score for local channel
@@ -148,9 +152,14 @@ class Layer3Temporal:
                 if N > 1 and ref_global is not None:
                     cos_global = self._cosine_similarity(g_current, ref_global)
                     d_global = 1.0 - cos_global
-                    s_global = max(0.0, state["cusum_global"] + d_global - (self.mu0_global + self.k_global))
+                    s_global = max(
+                        0.0,
+                        state["cusum_global"] + d_global - (self.mu0_global + self.k_global),
+                    )
                     state["cusum_global"] = s_global
-                    a3_global = 1.0 - 1.0 / (1.0 + math.exp(-self.slope * (s_global - self.h_global)))
+                    a3_global = 1.0 - 1.0 / (
+                        1.0 + math.exp(-self.slope * (s_global - self.h_global))
+                    )
                 else:
                     a3_global = 1.0
 
@@ -184,6 +193,6 @@ class Layer3Temporal:
         if client_id in self.client_state:
             del self.client_state[client_id]
 
-    def get_client_state(self, client_id: Any) -> Union[Dict[str, Any], None]:
+    def get_client_state(self, client_id: Any) -> dict[str, Any] | None:
         """Get a client's current state (for inspection/debugging)."""
         return self.client_state.get(client_id, None)

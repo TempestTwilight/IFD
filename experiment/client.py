@@ -2,18 +2,15 @@
 Flower NumPyClient and PyTorch FraudMLP Model
 """
 
-from typing import Dict, List, Optional, Tuple, Union, cast
-
 import os
-
-import numpy as np
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
+from typing import cast
 
 import flwr as fl
+import numpy as np
+import torch
 from flwr.common import Scalar
+from torch import nn, optim
+from torch.utils.data import DataLoader
 
 
 class FraudMLP(nn.Module):
@@ -38,7 +35,7 @@ class FraudMLP(nn.Module):
         return self.net(x).squeeze(-1)
 
 
-def get_parameters(net: nn.Module) -> List[np.ndarray]:
+def get_parameters(net: nn.Module) -> list[np.ndarray]:
     """
     Extract the complete model state_dict in deterministic order.
 
@@ -46,15 +43,12 @@ def get_parameters(net: nn.Module) -> List[np.ndarray]:
     BatchNorm running statistics and num_batches_tracked.
     """
 
-    return [
-        value.detach().cpu().numpy().copy()
-        for _, value in net.state_dict().items()
-    ]
+    return [value.detach().cpu().numpy().copy() for _, value in net.state_dict().items()]
 
 
 def set_parameters(
     net: nn.Module,
-    parameters: List[np.ndarray],
+    parameters: list[np.ndarray],
 ) -> None:
     """
     Load a complete model state_dict from Flower parameters.
@@ -89,11 +83,7 @@ def set_parameters(
                 f"Received dtype: {incoming.dtype}"
             )
 
-        tensor = torch.from_numpy(
-            incoming.copy()
-        ).to(
-            dtype=reference.dtype
-        )
+        tensor = torch.from_numpy(incoming.copy()).to(dtype=reference.dtype)
 
         converted[key] = tensor
 
@@ -112,9 +102,7 @@ _IFDClient__eval_round_counter = [0]
 class IFDClient(fl.client.NumPyClient):
     """Flower client representing a bank node in federated learning."""
 
-    device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
-    )
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def __init__(
         self,
@@ -125,16 +113,14 @@ class IFDClient(fl.client.NumPyClient):
         epochs: int = 1,
         lr: float = 1e-3,
         is_adversary: bool = False,
-        attack_type: Optional[str] = None,
+        attack_type: str | None = None,
     ):
         self.cid = str(cid)
 
         self.train_loader = train_loader
         self.val_loader = val_loader
 
-        self.net = FraudMLP(
-            input_dim=input_dim
-        ).to(self.device)
+        self.net = FraudMLP(input_dim=input_dim).to(self.device)
 
         self.epochs = epochs
         self.lr = lr
@@ -144,19 +130,19 @@ class IFDClient(fl.client.NumPyClient):
 
     def get_parameters(
         self,
-        config: Dict[str, Scalar],
-    ) -> List[np.ndarray]:
+        config: dict[str, Scalar],
+    ) -> list[np.ndarray]:
 
         return get_parameters(self.net)
 
     def fit(
         self,
-        parameters: List[np.ndarray],
-        config: Dict[str, Scalar],
-    ) -> Tuple[
-        List[np.ndarray],
+        parameters: list[np.ndarray],
+        config: dict[str, Scalar],
+    ) -> tuple[
+        list[np.ndarray],
         int,
-        Dict[str, Scalar],
+        dict[str, Scalar],
     ]:
 
         set_parameters(
@@ -164,9 +150,7 @@ class IFDClient(fl.client.NumPyClient):
             parameters,
         )
 
-        is_gpu = next(
-            self.net.parameters()
-        ).is_cuda
+        is_gpu = next(self.net.parameters()).is_cuda
 
         if is_gpu:
             device_name = torch.cuda.get_device_name(0)
@@ -186,17 +170,19 @@ class IFDClient(fl.client.NumPyClient):
         # Class-weighted loss: up-weight the minority fraud class so the
         # model is penalised more for missing a fraud than a false alarm.
         # pos_weight = (# negatives) / (# positives), clamped to [1, 100].
-        _all_labels = self.train_loader.dataset.dataset.y[
-            self.train_loader.dataset.indices
-        ] if hasattr(self.train_loader.dataset, "indices") else (
-            self.train_loader.dataset.y
-        )
+        from data.loader import IEEEFraudDataset
+
+        _ds = self.train_loader.dataset
+        if hasattr(_ds, "dataset") and hasattr(_ds, "indices"):
+            # Subset wrapping IEEEFraudDataset
+            _all_labels = cast(IEEEFraudDataset, _ds.dataset).y[_ds.indices]
+        else:
+            # Direct IEEEFraudDataset
+            _all_labels = cast(IEEEFraudDataset, _ds).y
         _n_pos = float(_all_labels.sum())
         _n_neg = float(len(_all_labels) - _n_pos)
         _pos_weight = float(np.clip(_n_neg / max(_n_pos, 1.0), 1.0, 100.0))
-        _weight_tensor = torch.tensor(
-            [_pos_weight], dtype=torch.float32, device=self.device
-        )
+        _weight_tensor = torch.tensor([_pos_weight], dtype=torch.float32, device=self.device)
         criterion = nn.BCELoss(reduction="none")
 
         def _weighted_loss(preds: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
@@ -207,9 +193,7 @@ class IFDClient(fl.client.NumPyClient):
         self.net.train()
 
         for epoch in range(self.epochs):
-
             for X_batch, y_batch in self.train_loader:
-
                 if len(X_batch) <= 1:
                     continue
 
@@ -224,15 +208,10 @@ class IFDClient(fl.client.NumPyClient):
                 )
 
                 # Label flipping is applied only to the local training labels.
-                if (
-                    self.is_adversary
-                    and self.attack_type == "label_flip"
-                ):
+                if self.is_adversary and self.attack_type == "label_flip":
                     y_batch = 1.0 - y_batch
 
-                optimizer.zero_grad(
-                    set_to_none=True
-                )
+                optimizer.zero_grad(set_to_none=True)
 
                 preds = self.net(X_batch)
 
@@ -245,21 +224,14 @@ class IFDClient(fl.client.NumPyClient):
 
                 optimizer.step()
 
-        updated_params = get_parameters(
-            self.net
-        )
+        updated_params = get_parameters(self.net)
 
         # ------------------------------------------------------------
         # Byzantine attacks
         # ------------------------------------------------------------
 
-        if (
-            self.is_adversary
-            and self.attack_type is not None
-        ):
-
+        if self.is_adversary and self.attack_type is not None:
             if self.attack_type == "sign_flip":
-
                 updated_params = [
                     -p
                     if np.issubdtype(
@@ -271,7 +243,6 @@ class IFDClient(fl.client.NumPyClient):
                 ]
 
             elif self.attack_type == "model_replace":
-
                 scale = 10.0
 
                 updated_params = [
@@ -285,7 +256,6 @@ class IFDClient(fl.client.NumPyClient):
                 ]
 
             elif self.attack_type == "gaussian_noise":
-
                 floating = [
                     p
                     for p in updated_params
@@ -297,38 +267,24 @@ class IFDClient(fl.client.NumPyClient):
                 ]
 
                 if floating:
+                    norms = [np.linalg.norm(p) for p in floating]
 
-                    norms = [
-                        np.linalg.norm(p)
-                        for p in floating
-                    ]
-
-                    sigma = (
-                        0.1 * max(norms)
-                        if norms
-                        else 1e-4
-                    )
+                    sigma = 0.1 * max(norms) if norms else 1e-4
 
                     noisy_params = []
 
                     for p in updated_params:
-
                         if np.issubdtype(
                             p.dtype,
                             np.floating,
                         ):
-
                             noise = np.random.normal(
                                 0.0,
                                 sigma,
                                 p.shape,
-                            ).astype(
-                                p.dtype
-                            )
+                            ).astype(p.dtype)
 
-                            noisy_params.append(
-                                p + noise
-                            )
+                            noisy_params.append(p + noise)
 
                         else:
                             noisy_params.append(p)
@@ -340,12 +296,12 @@ class IFDClient(fl.client.NumPyClient):
                 pass
 
             else:
-                raise ValueError(
-                    f"Unknown attack type: {self.attack_type}"
-                )
+                raise ValueError(f"Unknown attack type: {self.attack_type}")
+
+        from collections.abc import Sized as SizedProtocol
 
         dataset = cast(
-            Dataset,
+            SizedProtocol,
             self.train_loader.dataset,
         )
 
@@ -359,12 +315,12 @@ class IFDClient(fl.client.NumPyClient):
 
     def evaluate(
         self,
-        parameters: List[np.ndarray],
-        config: Dict[str, Scalar],
-    ) -> Tuple[
+        parameters: list[np.ndarray],
+        config: dict[str, Scalar],
+    ) -> tuple[
         float,
         int,
-        Dict[str, Scalar],
+        dict[str, Scalar],
     ]:
 
         set_parameters(
@@ -385,16 +341,10 @@ class IFDClient(fl.client.NumPyClient):
         import sklearn.metrics as skm
 
         with torch.no_grad():
-
             for X_batch, y_batch in self.val_loader:
+                X_batch = X_batch.to(self.device)
 
-                X_batch = X_batch.to(
-                    self.device
-                )
-
-                y_batch = y_batch.to(
-                    self.device
-                )
+                y_batch = y_batch.to(self.device)
 
                 preds = self.net(X_batch)
 
@@ -403,61 +353,38 @@ class IFDClient(fl.client.NumPyClient):
                     y_batch,
                 )
 
-                total_loss += (
-                    loss.item()
-                    * len(y_batch)
-                )
+                total_loss += loss.item() * len(y_batch)
 
-                total_samples += len(
-                    y_batch
-                )
+                total_samples += len(y_batch)
 
-                all_preds.extend(
-                    preds.cpu().numpy()
-                )
+                all_preds.extend(preds.cpu().numpy())
 
-                all_labels.extend(
-                    y_batch.cpu().numpy()
-                )
+                all_labels.extend(y_batch.cpu().numpy())
 
-        avg_loss = (
-            total_loss
-            / max(1, total_samples)
-        )
+        avg_loss = total_loss / max(1, total_samples)
 
-        all_labels = np.asarray(
-            all_labels
-        )
+        all_labels = np.asarray(all_labels)
 
-        all_preds = np.asarray(
-            all_preds
-        )
+        all_preds = np.asarray(all_preds)
 
-        binary_preds = (
-            all_preds >= 0.5
-        ).astype(float)
+        binary_preds = (all_preds >= 0.5).astype(float)
 
         if total_samples > 0:
-
-            accuracy = (
-                skm.accuracy_score(
-                    all_labels,
-                    binary_preds,
-                )
+            accuracy = skm.accuracy_score(
+                all_labels,
+                binary_preds,
             )
 
         else:
             accuracy = 0.0
 
         try:
-
             auc = skm.roc_auc_score(
                 all_labels,
                 all_preds,
             )
 
         except ValueError:
-
             auc = 0.5
 
         precision = skm.precision_score(
@@ -478,7 +405,7 @@ class IFDClient(fl.client.NumPyClient):
             zero_division=0,
         )
 
-        metrics = {
+        metrics: dict[str, Scalar] = {
             "accuracy": float(accuracy),
             "auc": float(auc),
             "precision": float(precision),
@@ -505,10 +432,7 @@ class IFDClient(fl.client.NumPyClient):
             _save_now = True
             if _target_round_str:
                 try:
-                    _save_now = (
-                        _IFDClient__eval_round_counter[0]
-                        == int(_target_round_str)
-                    )
+                    _save_now = _IFDClient__eval_round_counter[0] == int(_target_round_str)
                 except (ValueError, TypeError):
                     _save_now = True
             if _save_now:
