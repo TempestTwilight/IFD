@@ -9,6 +9,7 @@ wheels/
 .pytest_cache
 .ruff_cache
 .coverage
+.vscode
 
 # Virtual environments
 .venv

@@ -354,14 +354,45 @@ def main():
     # Partition data
     # ------------------------------------------------------------------------
 
-    labels = train_ds.y.numpy()
+    # Check for sweep-level partition file (created by run_seed_sweep.py)
+    partition_file = os.path.join(os.path.dirname(args.results_dir), "partition.json")
 
-    partitioner = GeographicPartitioner(
-        num_clients=args.num_clients,
-        seed=args.seed,
-    )
+    if os.path.exists(partition_file):
+        print(
+            f"Loading sweep-level partition from {partition_file}",
+            flush=True,
+        )
 
-    client_indices, _ = partitioner.partition(labels)
+        with open(partition_file) as f:
+            partition_data = json.load(f)
+
+        client_indices = {int(k): v for k, v in partition_data["client_indices"].items()}
+
+        print(
+            f"Partition config: {partition_data['config']}",
+            flush=True,
+        )
+
+        print(
+            f"Samples per client: {[len(v) for v in client_indices.values()]}",
+            flush=True,
+        )
+
+    else:
+        # Fallback: create partition per-run (for non-sweep usage)
+        print(
+            "No sweep-level partition found, creating partition per-run",
+            flush=True,
+        )
+
+        labels = train_ds.y.numpy()
+
+        partitioner = GeographicPartitioner(
+            num_clients=args.num_clients,
+            seed=args.seed,
+        )
+
+        client_indices, _ = partitioner.partition(labels)
 
     # ------------------------------------------------------------------------
     # Flower client factory

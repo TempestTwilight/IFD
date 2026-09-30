@@ -97,7 +97,7 @@ class OracleWhiteBoxPGD:
                 # Retain top 95% variance components
                 var_ratio = (S**2) / (S**2).sum()
                 cum_var = torch.cumsum(var_ratio, dim=0)
-                k = int(torch.searchsorted(cum_var, 0.95).item()) + 1
+                k = min(int(torch.searchsorted(cum_var, 0.95).item()) + 1, Vh.shape[0])
                 Vk = Vh[:k, :]  # shape (k, d)
 
                 proj = torch.matmul(g_adv, Vk.T)
