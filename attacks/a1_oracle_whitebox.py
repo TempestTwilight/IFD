@@ -1,40 +1,86 @@
 """
 A1: Oracle White-Box PGD Attack
 
-Adversary knows full defense state (ref, peer subspace, historical trajectories)
-and uses projected gradient descent (PGD) to optimize a malicious gradient vector
-that maximizes alignment with target direction while evading cascade detection layers.
+Adversary knows the full defense state (layer objects, their real thresholds,
+peer gradients, Layer 3 per-client history) and uses normalized-gradient PGD to
+find a gradient that maximizes alignment with a target direction while passing
+the real Layer 1 / Layer 2 / Layer 3 cascade.
+
+eps is RELATIVE: the L2 ball radius is eps * ||mean_honest||.
 """
 
 import torch
+import torch.nn.functional as torch_nn_functional
 
 
 class OracleWhiteBoxPGD:
-    """
-    Oracle White-Box PGD Attack.
-
-    Optimizes adversarial gradient vector g_adv to maximize alignment with target_direction
-    subject to passing Layer 1 (Norm/Cosine), Layer 2 (Spectral), and Layer 3 (Temporal).
-    """
-
     def __init__(
         self,
         eps: float = 0.5,
         step_size: float = 0.05,
         num_steps: int = 30,
         penalty_weight: float = 2.0,
+        accept_thresh: float = 0.5,
+        accept_margin: float = 0.6,
     ):
         """
         Args:
-            eps: Maximum L2 perturbation radius from mean honest gradient
-            step_size: PGD optimization step size
-            num_steps: Number of PGD iterations
-            penalty_weight: Weight of defense rejection penalty in loss
+            eps: Relative L2 radius around the mean honest gradient
+                (radius = eps * ||mean_honest||).
+            step_size: Step length as a fraction of the ball radius.
+            num_steps: Number of PGD iterations.
+            penalty_weight: Weight of the defense-rejection penalty.
+            accept_thresh: A layer "passes" if its acceptance score >= this.
+            accept_margin: Penalty activates below this score (> accept_thresh
+                gives a safety margin against surrogate/real mismatch).
         """
         self.eps = eps
         self.step_size = step_size
         self.num_steps = num_steps
         self.penalty_weight = penalty_weight
+        self.accept_thresh = accept_thresh
+        self.accept_margin = accept_margin
+
+    # ------------------------------------------------------------------
+    # Layer 3 prediction (differentiable, does NOT mutate layer3 state)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _layer3_score(g, honest, layer3, client_id):
+        zero_one = torch.ones((), device=g.device, dtype=g.dtype)
+        state = layer3.get_client_state(client_id)
+        if state is None:
+            return zero_one  # first round: layer 3 returns a3 = 1
+
+        rounds = state["rounds_seen"] + 1
+        if layer3.warmup_rounds > 0 and rounds <= layer3.warmup_rounds:
+            return zero_one  # warmup: no anomaly scoring
+
+        traj = state["trajectory"].to(g.device, g.dtype)
+        d_local = 1.0 - torch_nn_functional.cosine_similarity(g, traj, dim=0, eps=1e-8)
+        s_local = torch.relu(state["cusum_local"] + d_local - (state["mu0_local"] + layer3.k_local))
+        a_local = 1.0 - torch.sigmoid(layer3.slope * (s_local - layer3.h_local))
+
+        ref = torch.median(torch.cat([honest, g.unsqueeze(0)], dim=0), dim=0).values
+        d_global = 1.0 - torch_nn_functional.cosine_similarity(g, ref, dim=0, eps=1e-8)
+        s_global = torch.relu(
+            state["cusum_global"] + d_global - (state["mu0_global"] + layer3.k_global)
+        )
+        a_global = 1.0 - torch.sigmoid(layer3.slope * (s_global - layer3.h_global))
+
+        return torch.minimum(a_local, a_global)
+
+    def _real_scores(self, g, honest, layer1, layer2, layer3, client_id):
+        """Run the actual layers on honest + g (no grad). Returns dict of scalars."""
+        out = {}
+        with torch.no_grad():
+            G = torch.cat([honest, g.unsqueeze(0)], dim=0)
+            if layer1 is not None:
+                out["l1"] = layer1.score(G)[0][-1].item()
+            if layer2 is not None and G.shape[0] >= 3:
+                out["l2"] = layer2.score(G)[0][-1].item()
+            if layer3 is not None:
+                out["l3"] = self._layer3_score(g, honest, layer3, client_id).item()
+        return out
 
     def attack(
         self,
@@ -44,77 +90,102 @@ class OracleWhiteBoxPGD:
         layer2=None,
         layer3=None,
         client_id: str = "adv_0",
-    ) -> torch.Tensor:
+        return_info: bool = False,
+    ):
         """
         Craft adversarial gradient g_adv.
 
-        Args:
-            honest_gradients: List of 1D torch Tensors representing honest client gradients
-            target_direction: 1D torch Tensor representing desired attack direction
-            layer1: Instance of Layer1NormCosine (optional)
-            layer2: Instance of Layer2Spectral (optional)
-            layer3: Instance of Layer3Temporal (optional)
-            client_id: Identifier for adversary (for Layer 3 state)
-
-        Returns:
-            g_adv: Crafted 1D adversarial gradient tensor
+        Returns g_adv, or (g_adv, info) if return_info=True. info contains
+        the real per-layer acceptance scores, whether all layers passed,
+        and the cosine alignment with the target.
         """
-        stacked_honest = torch.stack([g.flatten() for g in honest_gradients])
-        mean_honest = stacked_honest.mean(dim=0)
-        target_normed = target_direction.flatten() / (torch.norm(target_direction.flatten()) + 1e-8)
+        honest = torch.stack([g.detach().flatten() for g in honest_gradients])
+        device, dtype = honest.device, honest.dtype
+        target = target_direction.detach().flatten().to(device, dtype)
+        target = target / (target.norm() + 1e-8)
 
-        # Initialize g_adv near target_direction scaled to mean honest norm
-        target_scale = torch.norm(mean_honest)
-        g_adv = (target_normed * target_scale).clone().detach().requires_grad_(True)
+        mean_honest = honest.mean(dim=0)
+        mean_norm = mean_honest.norm()
+        radius = self.eps * mean_norm
+        lr = self.step_size * radius
 
-        optimizer = torch.optim.Adam([g_adv], lr=self.step_size)
+        def project(g):
+            d = g - mean_honest
+            n = d.norm()
+            return mean_honest + d * (radius / n) if n > radius else g
 
-        for _step in range(self.num_steps):
-            optimizer.zero_grad()
+        # Layer 2 surrogate subspace: computed once, using the layer's own gamma.
+        Vk = None
+        if layer2 is not None and honest.shape[0] >= 3:
+            peer_mat = honest - mean_honest
+            _, S, Vh = torch.linalg.svd(peer_mat, full_matrices=False)
+            var = S**2
+            if var.sum() > 0:
+                cum = torch.cumsum(var / var.sum(), dim=0)
+                gamma = torch.tensor(layer2.gamma, device=cum.device, dtype=cum.dtype)
+                k = min(int(torch.searchsorted(cum, gamma).item()) + 1, Vh.shape[0])
+                Vk = Vh[:k]
 
-            # Loss: Maximize alignment with target direction
-            cos_target = torch.sum(g_adv * target_normed) / (torch.norm(g_adv) + 1e-8)
-            loss_target = -cos_target  # Minimize negative cosine
+        # Feasible start point.
+        g_adv = project(target * mean_norm).clone().detach().requires_grad_(True)
 
-            loss_penalty = torch.tensor(0.0)
+        zero = torch.zeros((), device=device, dtype=dtype)
+        best_ok, best_ok_cos = None, -2.0
+        best_fb, best_fb_viol = None, float("inf")
 
-            # Differentiable soft penalties if defense layers provided
+        for _ in range(self.num_steps + 1):
+            # ---- evaluate current iterate against the REAL layers ----
+            gc = g_adv.detach()
+            real = self._real_scores(gc, honest, layer1, layer2, layer3, client_id)
+            cos_t = torch_nn_functional.cosine_similarity(gc, target, dim=0).item()
+            viol = sum(max(0.0, self.accept_thresh - v) for v in real.values())
+            if viol == 0.0 and cos_t > best_ok_cos:
+                best_ok, best_ok_cos = gc.clone(), cos_t
+            if viol < best_fb_viol:
+                best_fb, best_fb_viol = gc.clone(), viol
+
+            if _ == self.num_steps:
+                break
+
+            # ---- differentiable surrogate loss ----
+            if g_adv.grad is not None:
+                g_adv.grad.zero_()
+
+            loss_target = -torch_nn_functional.cosine_similarity(g_adv, target, dim=0, eps=1e-8)
+            penalty = zero
+
             if layer1 is not None:
-                # Norm penalty
-                g_all = torch.cat([stacked_honest, g_adv.unsqueeze(0)], dim=0)
-                norms = torch.norm(g_all, dim=1)
-                mu_norm = norms[:-1].mean()
-                sigma_norm = norms[:-1].std() + 1e-8
-                z_norm = torch.abs(torch.norm(g_adv) - mu_norm) / sigma_norm
-                s_norm = 1.0 - torch.sigmoid(z_norm - 3.0)
-                loss_penalty = loss_penalty + torch.relu(0.5 - s_norm)
+                a1 = layer1.score(torch.cat([honest, g_adv.unsqueeze(0)], dim=0))[0][-1]
+                penalty = penalty + torch.relu(self.accept_margin - a1)
 
-            if layer2 is not None and stacked_honest.shape[0] >= 3:
-                # Spectral projection penalty
-                # Peer matrix excluding g_adv is stacked_honest
-                peer_mat = stacked_honest - stacked_honest.mean(dim=0, keepdim=True)
-                _U, S, Vh = torch.linalg.svd(peer_mat, full_matrices=False)
-                # Retain top 95% variance components
-                var_ratio = (S**2) / (S**2).sum()
-                cum_var = torch.cumsum(var_ratio, dim=0)
-                k = min(int(torch.searchsorted(cum_var, 0.95).item()) + 1, Vh.shape[0])
-                Vk = Vh[:k, :]  # shape (k, d)
+            if Vk is not None:
+                d = g_adv - mean_honest
+                recon_err = (d - (d @ Vk.T) @ Vk).norm() / (mean_norm + 1e-8)
+                penalty = penalty + recon_err
 
-                proj = torch.matmul(g_adv, Vk.T)
-                recon = torch.matmul(proj, Vk)
-                recon_err = torch.norm(g_adv - recon)
-                loss_penalty = loss_penalty + recon_err * 0.1
+            if layer3 is not None:
+                a3 = self._layer3_score(g_adv, honest, layer3, client_id)
+                penalty = penalty + torch.relu(self.accept_margin - a3)
 
-            total_loss = loss_target + self.penalty_weight * loss_penalty
-            total_loss.backward()
-            optimizer.step()
+            (loss_target + self.penalty_weight * penalty).backward()
 
-            # Projection step: clamp g_adv within L2 ball around mean_honest
+            # ---- normalized-gradient step + projection ----
             with torch.no_grad():
-                delta = g_adv - mean_honest
-                delta_norm = torch.norm(delta)
-                if delta_norm > self.eps * torch.norm(mean_honest):
-                    delta = delta * (self.eps * torch.norm(mean_honest) / delta_norm)
-                g_adv.copy_(mean_honest + delta)
+                grad = g_adv.grad
+                if grad is not None:
+                    g_adv -= lr * grad / (grad.norm() + 1e-12)
+                    g_adv.copy_(project(g_adv))
 
-        return g_adv.detach()
+        g_final = best_ok if best_ok is not None else best_fb
+        assert g_final is not None  # at least one of best_ok/best_fb is set
+        if not return_info:
+            return g_final
+
+        real = self._real_scores(g_final, honest, layer1, layer2, layer3, client_id)
+        info = {
+            "scores": real,
+            "passed_all": all(v >= self.accept_thresh for v in real.values()),
+            "cos_target": torch_nn_functional.cosine_similarity(g_final, target, dim=0).item(),
+            "l2_dist_ratio": ((g_final - mean_honest).norm() / (mean_norm + 1e-8)).item(),
+        }
+        return g_final, info

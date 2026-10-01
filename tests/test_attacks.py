@@ -24,7 +24,7 @@ def test_a1_oracle_whitebox():
     l2 = Layer2Spectral()
 
     attacker = OracleWhiteBoxPGD(eps=0.3, num_steps=20)
-    g_adv = attacker.attack(honest_grads, target_dir, layer1=l1, layer2=l2)
+    g_adv, info = attacker.attack(honest_grads, target_dir, layer1=l1, layer2=l2, return_info=True)
 
     assert g_adv.shape == (d,), f"Shape mismatch: {g_adv.shape}"
     cos_target = (

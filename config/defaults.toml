@@ -1,0 +1,74 @@
+# IFD-Fintech Default Configuration
+# Single source of truth for all experiment parameters
+
+seed = 44
+
+[data]
+data_dir = "./data/raw"
+# nrows omitted = None in Python
+synthetic_fallback = false
+clip_value = 10.0
+
+# Partitioning
+num_clients = 10
+partition_method = "random"  # "random" or "dirichlet"
+partition_alpha = 0.5
+min_samples_per_client = 10
+min_class_samples_per_client = 2
+
+[training]
+batch_size = 512
+epochs_per_round = 10
+lr = 0.001
+hidden_dim = 128
+dropout = [0.2, 0.1]
+
+[fl]
+num_rounds = 20
+# clients_per_round omitted = None
+
+[attack]
+num_adversaries = 0
+# attack_type omitted = None
+
+# Attack-specific parameters
+oracle_eps = 0.3
+oracle_num_steps = 20
+grinding_drift_angle = 5.0
+grinding_warmup = 10
+spectral_gamma = 0.95
+
+[defense]
+disable_layer1 = false
+disable_layer2 = false
+disable_layer3 = false
+
+# Layer 1: Norm/Cosine
+z_thresh_l1 = 3.3
+
+# Layer 2: Spectral
+gamma_l2 = 0.95
+
+# Layer 3: Temporal
+slope_l3 = 6.0
+h_local_l3 = 1.2
+h_global_l3 = 1.2
+mu0_local_l3 = 0.33
+mu0_global_l3 = 0.28
+warmup_rounds_l3 = 5
+
+[baseline]
+# baseline omitted = None (IFD cascade)
+
+# Baseline-specific parameters
+krum_f = 1
+trimmed_beta = 0.1
+foolsgold_temp = 5.0
+dpfl_clip_norm = 1.0
+dpfl_noise_std = 0.1
+fldetector_threshold = 0.5
+
+[output]
+results_dir = "./results"
+# save_model omitted = None
+# run_label omitted = None

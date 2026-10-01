@@ -22,6 +22,7 @@ data/raw
 *.7z
 *.npz
 *.zip
+.docs/
 
 # Codegraph
 .codegraph

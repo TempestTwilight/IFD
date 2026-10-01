@@ -103,7 +103,7 @@ class DirichletPartitioner:
         alpha: float = 0.5,
         seed: int = 42,
         min_samples_per_client: int = 10,
-        min_class_samples_per_client: int = 5,
+        min_class_samples_per_client: int = 2,
         max_tries: int = 1000,
     ):
         if num_clients < 1:
