@@ -39,6 +39,7 @@ from datetime import UTC, datetime
 
 import numpy as np
 
+from config import RNGManager, load_config, save_provenance
 from data.loader import load_ieee_cis_data
 from data.partitioner import DirichletPartitioner
 
@@ -58,38 +59,26 @@ SWEEP_LOG = os.path.join(
 SEED_TIMEOUT_MINUTES = float(
     os.environ.get(
         "SEED_TIMEOUT_MINUTES",
-        "3600",
+        "480",
     )
 )
 
 SEED_TIMEOUT_SECONDS = SEED_TIMEOUT_MINUTES * 60
 
-PARTITION_SEED = int(
-    os.environ.get(
-        "PARTITION_SEED",
-        "43",
-    )
-)
-
-PARTITION_ALPHA = float(
-    os.environ.get(
-        "PARTITION_ALPHA",
-        "0.5",
-    )
-)
-
-NUM_CLIENTS = int(
-    os.environ.get(
-        "NUM_CLIENTS",
-        "5",
-    )
-)
-
-NROWS = int(
-    os.environ.get(
-        "NROWS",
-        "10000",
-    )
+# Load base config (can be overridden via env)
+# ponytail: single load at module level, sweep reuses base config
+BASE_CONFIG = load_config(
+    overrides={
+        "seed": int(os.environ.get("PARTITION_SEED", "43")),
+        "data": {
+            "partition_alpha": float(os.environ.get("PARTITION_ALPHA", "0.5")),
+            "num_clients": int(os.environ.get("NUM_CLIENTS", "5")),
+            "nrows": int(os.environ.get("NROWS", "10000")),
+        },
+        "fl": {
+            "num_rounds": int(os.environ.get("NUM_ROUNDS", "20")),
+        },
+    }
 )
 
 PARTITION_FILE = os.path.join(
@@ -151,28 +140,32 @@ def create_partition(
         sweep_log,
     )
 
+    # Create RNG manager to derive partition seed
+    rng = RNGManager(BASE_CONFIG.seed)
+    partition_seed = rng.get_seed("partition")
+
     log(
-        f"  Partition seed: {PARTITION_SEED}",
+        f"  Partition seed (derived): {partition_seed}",
         sweep_log,
     )
 
     log(
-        f"  Partition alpha: {PARTITION_ALPHA}",
+        f"  Partition alpha: {BASE_CONFIG.data.partition_alpha}",
         sweep_log,
     )
 
     log(
-        f"  Num clients: {NUM_CLIENTS}",
+        f"  Num clients: {BASE_CONFIG.data.num_clients}",
         sweep_log,
     )
 
     log(
-        f"  Loading training data (nrows={NROWS})...",
+        f"  Loading training data (nrows={BASE_CONFIG.data.nrows})...",
         sweep_log,
     )
 
     train_dataset, test_dataset = load_ieee_cis_data(
-        nrows=NROWS,
+        nrows=BASE_CONFIG.data.nrows,
     )
 
     y_train = train_dataset.y.numpy()
@@ -193,9 +186,9 @@ def create_partition(
     )
 
     partitioner = DirichletPartitioner(
-        num_clients=NUM_CLIENTS,
-        alpha=PARTITION_ALPHA,
-        seed=PARTITION_SEED,
+        num_clients=BASE_CONFIG.data.num_clients,
+        alpha=BASE_CONFIG.data.partition_alpha,
+        seed=partition_seed,
     )
 
     client_indices, metadata = partitioner.partition(
@@ -212,10 +205,10 @@ def create_partition(
         "client_indices": client_indices_json,
         "metadata": metadata,
         "config": {
-            "partition_seed": PARTITION_SEED,
-            "partition_alpha": PARTITION_ALPHA,
-            "num_clients": NUM_CLIENTS,
-            "nrows": NROWS,
+            "partition_seed": partition_seed,
+            "partition_alpha": BASE_CONFIG.data.partition_alpha,
+            "num_clients": BASE_CONFIG.data.num_clients,
+            "nrows": BASE_CONFIG.data.nrows,
             "num_train_samples": len(train_dataset),
             "num_test_samples": len(test_dataset),
             "input_dim": train_dataset.x.shape[1],
@@ -282,10 +275,9 @@ def validate_partition(
     config = partition_data.get("config", {})
 
     expected = {
-        "partition_seed": PARTITION_SEED,
-        "partition_alpha": PARTITION_ALPHA,
-        "num_clients": NUM_CLIENTS,
-        "nrows": NROWS,
+        "partition_alpha": BASE_CONFIG.data.partition_alpha,
+        "num_clients": BASE_CONFIG.data.num_clients,
+        "nrows": BASE_CONFIG.data.nrows,
     }
 
     for key, expected_value in expected.items():
@@ -304,11 +296,11 @@ def validate_partition(
         {},
     )
 
-    if len(client_indices) != NUM_CLIENTS:
+    if len(client_indices) != BASE_CONFIG.data.num_clients:
         raise ValueError(
             "Existing partition contains "
             f"{len(client_indices)} clients, "
-            f"but NUM_CLIENTS={NUM_CLIENTS}."
+            f"but num_clients={BASE_CONFIG.data.num_clients}."
         )
 
 
@@ -400,6 +392,16 @@ def run_seed(
         return message
 
     # ------------------------------------------------------------------------
+    # Create config for this seed
+    # ------------------------------------------------------------------------
+
+    seed_config = load_config(overrides={"seed": seed})
+    rng = RNGManager(seed_config.seed)
+
+    # Save provenance before run
+    save_provenance(seed_config, results_dir)
+
+    # ------------------------------------------------------------------------
     # Per-seed log
     # ------------------------------------------------------------------------
 
@@ -431,6 +433,8 @@ def run_seed(
             "a",
             encoding="utf-8",
         ) as seed_log:
+            partition_seed_derived = rng.get_seed("partition")
+
             seed_log.write(
                 "\n"
                 + "=" * 80
@@ -438,8 +442,8 @@ def run_seed(
                 + f"SEED {seed} STARTED {ts()}\n"
                 + f"TIMEOUT: {SEED_TIMEOUT_MINUTES:.1f} min\n"
                 + f"PARTITION FILE: {PARTITION_FILE}\n"
-                + f"PARTITION SEED: {PARTITION_SEED}\n"
-                + f"PARTITION ALPHA: {PARTITION_ALPHA}\n"
+                + f"PARTITION SEED (derived): {partition_seed_derived}\n"
+                + f"PARTITION ALPHA: {BASE_CONFIG.data.partition_alpha}\n"
                 + "=" * 80
                 + "\n"
             )
@@ -459,10 +463,10 @@ def run_seed(
             env["PARTITION_FILE"] = PARTITION_FILE
 
             # Also expose partition configuration explicitly.
-            env["PARTITION_SEED"] = str(PARTITION_SEED)
-            env["PARTITION_ALPHA"] = str(PARTITION_ALPHA)
-            env["NUM_CLIENTS"] = str(NUM_CLIENTS)
-            env["NROWS"] = str(NROWS)
+            env["PARTITION_SEED"] = str(partition_seed_derived)
+            env["PARTITION_ALPHA"] = str(BASE_CONFIG.data.partition_alpha)
+            env["NUM_CLIENTS"] = str(BASE_CONFIG.data.num_clients)
+            env["NROWS"] = str(BASE_CONFIG.data.nrows)
 
             cmd = [
                 sys.executable,
@@ -598,22 +602,22 @@ def main() -> int:
         )
 
         log(
-            f"Partition seed: {PARTITION_SEED}",
+            f"Base seed (for partition derivation): {BASE_CONFIG.seed}",
             sweep_log,
         )
 
         log(
-            f"Partition alpha: {PARTITION_ALPHA}",
+            f"Partition alpha: {BASE_CONFIG.data.partition_alpha}",
             sweep_log,
         )
 
         log(
-            f"Num clients: {NUM_CLIENTS}",
+            f"Num clients: {BASE_CONFIG.data.num_clients}",
             sweep_log,
         )
 
         log(
-            f"NROWS: {NROWS}",
+            f"NROWS: {BASE_CONFIG.data.nrows}",
             sweep_log,
         )
 

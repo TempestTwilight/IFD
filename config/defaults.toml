@@ -11,7 +11,7 @@ clip_value = 10.0
 
 # Partitioning
 num_clients = 10
-partition_method = "random"  # "random" or "dirichlet"
+partition_method = "dirichlet"  # "random" or "dirichlet"
 partition_alpha = 0.5
 min_samples_per_client = 10
 min_class_samples_per_client = 2

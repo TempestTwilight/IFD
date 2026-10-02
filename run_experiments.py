@@ -35,6 +35,8 @@ import sys
 import time
 from datetime import UTC, datetime
 
+from config import RNGManager, load_config, save_provenance
+
 # ============================================================================
 # Configuration
 # ============================================================================
@@ -176,7 +178,7 @@ def build_experiments():
     experiments.append(
         (
             "CleanRun_Simple",
-            [],
+            {},
         )
     )
 
@@ -191,12 +193,12 @@ def build_experiments():
             experiments.append(
                 (
                     label,
-                    [
-                        "--num-adversaries",
-                        str(n_adv(ratio)),
-                        "--attack-type",
-                        attack,
-                    ],
+                    {
+                        "attack": {
+                            "num_adversaries": n_adv(ratio),
+                            "attack_type": attack,
+                        }
+                    },
                 )
             )
 
@@ -207,62 +209,75 @@ def build_experiments():
     layers = [
         (
             "NoL1",
-            "--disable-layer1",
+            {"defense": {"disable_layer1": True}},
         ),
         (
             "NoL2",
-            "--disable-layer2",
+            {"defense": {"disable_layer2": True}},
         ),
         (
             "NoL3",
-            "--disable-layer3",
+            {"defense": {"disable_layer3": True}},
         ),
     ]
 
     conditions = [
         (
             "Clean",
-            [],
+            {},
         ),
         (
             "SignFlip20pct",
-            [
-                "--num-adversaries",
-                str(n_adv(0.20)),
-                "--attack-type",
-                "sign_flip",
-            ],
+            {
+                "attack": {
+                    "num_adversaries": n_adv(0.20),
+                    "attack_type": "sign_flip",
+                }
+            },
         ),
         (
             "LabelFlip20pct",
-            [
-                "--num-adversaries",
-                str(n_adv(0.20)),
-                "--attack-type",
-                "label_flip",
-            ],
+            {
+                "attack": {
+                    "num_adversaries": n_adv(0.20),
+                    "attack_type": "label_flip",
+                }
+            },
         ),
         (
             "ModelReplace20pct",
-            [
-                "--num-adversaries",
-                str(n_adv(0.20)),
-                "--attack-type",
-                "model_replace",
-            ],
+            {
+                "attack": {
+                    "num_adversaries": n_adv(0.20),
+                    "attack_type": "model_replace",
+                }
+            },
         ),
     ]
 
-    for layer_name, layer_flag in layers:
-        for condition_name, condition_args in conditions:
+    for layer_name, layer_overrides in layers:
+        for condition_name, condition_overrides in conditions:
+            # Merge layer and condition overrides
+            merged = _deep_merge(layer_overrides, condition_overrides)
             experiments.append(
                 (
                     f"Ablation_{layer_name}_{condition_name}",
-                    [layer_flag] + condition_args,
+                    merged,
                 )
             )
 
     return experiments
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Deep merge two dictionaries."""
+    result = base.copy()
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
 
 
 # ============================================================================
@@ -500,7 +515,7 @@ def terminate_process_tree(
 # ============================================================================
 
 
-def run(label, extra_args):
+def run(label, overrides):
 
     # ------------------------------------------------------------------------
     # Resume
@@ -517,6 +532,37 @@ def run(label, extra_args):
         write_log(message)
 
         return True
+
+    # ------------------------------------------------------------------------
+    # Build config
+    # ------------------------------------------------------------------------
+
+    # Base overrides from environment
+    base_overrides = {
+        "seed": SEED,
+        "data": {
+            "nrows": NROWS,
+            "num_clients": NUM_CLIENTS,
+        },
+        "training": {
+            "batch_size": BATCH_SIZE,
+            "epochs_per_round": EPOCHS,
+        },
+        "fl": {
+            "num_rounds": NUM_ROUNDS,
+        },
+        "output": {
+            "results_dir": RESULTS_DIR,
+            "run_label": label,
+        },
+    }
+
+    # Merge experiment-specific overrides
+    merged_overrides = _deep_merge(base_overrides, overrides)
+    config = load_config(overrides=merged_overrides)
+
+    # Initialize RNG manager
+    RNGManager(config.seed)
 
     # ------------------------------------------------------------------------
     # Paths
@@ -561,37 +607,57 @@ def run(label, extra_args):
     )
 
     # ------------------------------------------------------------------------
+    # Save provenance
+    # ------------------------------------------------------------------------
+
+    provenance_dir = os.path.join(book_dir, "provenance")
+    save_provenance(config, provenance_dir)
+
+    # ------------------------------------------------------------------------
     # Ray cleanup before experiment
     # ------------------------------------------------------------------------
 
     cleanup_local_ray(reason=f"before {label}")
 
     # ------------------------------------------------------------------------
-    # Command
+    # Command - build from config
     # ------------------------------------------------------------------------
 
     cmd = [
         sys.executable,
         "train.py",
         "--num-clients",
-        str(NUM_CLIENTS),
+        str(config.data.num_clients),
         "--num-rounds",
-        str(NUM_ROUNDS),
-        "--nrows",
-        str(NROWS),
+        str(config.fl.num_rounds),
         "--batch-size",
-        str(BATCH_SIZE),
+        str(config.training.batch_size),
         "--epochs-per-round",
-        str(EPOCHS),
+        str(config.training.epochs_per_round),
         "--results-dir",
         RESULTS_DIR,
         "--save-model",
         model_path,
         "--seed",
-        str(SEED),
+        str(config.seed),
         "--run-label",
         label,
-    ] + extra_args
+    ]
+
+    if config.data.nrows:
+        cmd.extend(["--nrows", str(config.data.nrows)])
+
+    if config.attack.num_adversaries > 0:
+        cmd.extend(["--num-adversaries", str(config.attack.num_adversaries)])
+        if config.attack.attack_type:
+            cmd.extend(["--attack-type", config.attack.attack_type])
+
+    if config.defense.disable_layer1:
+        cmd.append("--disable-layer1")
+    if config.defense.disable_layer2:
+        cmd.append("--disable-layer2")
+    if config.defense.disable_layer3:
+        cmd.append("--disable-layer3")
 
     header = (
         "\n"
@@ -633,9 +699,6 @@ def run(label, extra_args):
             experiment_log.flush()
 
             env = os.environ.copy()
-
-            env["RESULTS_DIR"] = RESULTS_DIR
-            env["SEED"] = str(SEED)
 
             kwargs = {
                 "env": env,

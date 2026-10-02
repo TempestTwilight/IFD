@@ -20,11 +20,12 @@ import time
 os.environ["RAY_memory_monitor_refresh_ms"] = "0"
 
 import flwr as fl
-import numpy as np
 import ray
 import torch
 from torch.utils.data import DataLoader, Subset
 
+from config import RNGManager, load_config, save_provenance
+from config.cli import args_to_overrides
 from data.loader import load_ieee_cis_data
 from data.partitioner import GeographicPartitioner
 from experiment.client import (
@@ -244,16 +245,13 @@ def atomic_json_dump(data, path):
 def main():
 
     args = parse_args()
+    config = load_config(overrides=args_to_overrides(args))
+    rng = RNGManager(config.seed)
 
     # ------------------------------------------------------------------------
     # Reproducibility
     # ------------------------------------------------------------------------
-
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(args.seed)
+    # (RNGManager handles np.random.seed, torch.manual_seed, and torch.cuda.manual_seed_all)
 
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
@@ -262,25 +260,25 @@ def main():
     # Validate
     # ------------------------------------------------------------------------
 
-    if args.num_clients < 1:
+    if config.data.num_clients < 1:
         raise ValueError("--num-clients must be >= 1")
 
-    if args.num_rounds < 1:
+    if config.fl.num_rounds < 1:
         raise ValueError("--num-rounds must be >= 1")
 
-    if args.num_adversaries < 0:
+    if config.attack.num_adversaries < 0:
         raise ValueError("--num-adversaries must be >= 0")
 
-    if args.num_adversaries > args.num_clients:
+    if config.attack.num_adversaries > config.data.num_clients:
         raise ValueError("--num-adversaries cannot exceed --num-clients")
 
-    if args.nrows is not None and args.nrows < 1:
+    if config.data.nrows is not None and config.data.nrows < 1:
         raise ValueError("--nrows must be >= 1")
 
-    if args.batch_size < 1:
+    if config.training.batch_size < 1:
         raise ValueError("--batch-size must be >= 1")
 
-    if args.epochs_per_round < 1:
+    if config.training.epochs_per_round < 1:
         raise ValueError("--epochs-per-round must be >= 1")
 
     # ------------------------------------------------------------------------
@@ -314,20 +312,20 @@ def main():
     # ------------------------------------------------------------------------
 
     print(
-        f"\nLoading data from: {args.data_dir}",
+        f"\nLoading data from: {config.data.data_dir}",
         flush=True,
     )
 
     try:
         train_ds, test_ds = load_ieee_cis_data(
-            data_dir=args.data_dir,
-            nrows=args.nrows,
+            data_dir=config.data.data_dir,
+            nrows=config.data.nrows,
             synthetic_fallback=False,
         )
 
     except FileNotFoundError:
         print(
-            f"ERROR: IEEE-CIS CSV files not found in '{args.data_dir}'.",
+            f"ERROR: IEEE-CIS CSV files not found in '{config.data.data_dir}'.",
             flush=True,
         )
 
@@ -355,7 +353,7 @@ def main():
     # ------------------------------------------------------------------------
 
     # Check for sweep-level partition file (created by run_seed_sweep.py)
-    partition_file = os.path.join(os.path.dirname(args.results_dir), "partition.json")
+    partition_file = os.path.join(os.path.dirname(config.output.results_dir), "partition.json")
 
     if os.path.exists(partition_file):
         print(
@@ -388,8 +386,8 @@ def main():
         labels = train_ds.y.numpy()
 
         partitioner = GeographicPartitioner(
-            num_clients=args.num_clients,
-            seed=args.seed,
+            num_clients=config.data.num_clients,
+            seed=rng.get_seed("partition"),
         )
 
         client_indices, _ = partitioner.partition(labels)
@@ -411,7 +409,7 @@ def main():
 
         train_loader = DataLoader(
             client_train_ds,
-            batch_size=args.batch_size,
+            batch_size=config.training.batch_size,
             shuffle=True,
             num_workers=num_workers,
             pin_memory=pin_memory,
@@ -419,23 +417,23 @@ def main():
 
         val_loader = DataLoader(
             test_ds,
-            batch_size=args.batch_size * 2,
+            batch_size=config.training.batch_size * 2,
             shuffle=False,
             num_workers=num_workers,
             pin_memory=pin_memory,
         )
 
-        is_adv = client_idx < args.num_adversaries
+        is_adv = client_idx < config.attack.num_adversaries
 
         client = IFDClient(
             cid=cid,
             train_loader=train_loader,
             val_loader=val_loader,
             input_dim=input_dim,
-            epochs=args.epochs_per_round,
-            lr=args.lr,
+            epochs=config.training.epochs_per_round,
+            lr=config.training.lr,
             is_adversary=is_adv,
-            attack_type=(args.attack_type if is_adv else None),
+            attack_type=(config.attack.attack_type if is_adv else None),
         )
 
         return client.to_client()
@@ -506,28 +504,28 @@ def main():
                 torch.ones(n),
             )
 
-    layer1 = _PassL1() if args.disable_layer1 else None
+    layer1 = _PassL1() if config.defense.disable_layer1 else None
 
-    layer2 = _PassL2() if args.disable_layer2 else None
+    layer2 = _PassL2() if config.defense.disable_layer2 else None
 
-    layer3 = _PassL3() if args.disable_layer3 else None
+    layer3 = _PassL3() if config.defense.disable_layer3 else None
 
     # ------------------------------------------------------------------------
     # Strategy
     # ------------------------------------------------------------------------
 
-    if args.baseline:
+    if config.baseline.baseline:
         from orchestration.baseline_strategy import (
             BaselineStrategy,
         )
 
         strategy = BaselineStrategy(
-            baseline_name=args.baseline,
+            baseline_name=config.baseline.baseline,
             evaluate_metrics_aggregation_fn=weighted_average,
         )
 
         print(
-            f"Strategy: BaselineStrategy ({args.baseline})",
+            f"Strategy: BaselineStrategy ({config.baseline.baseline})",
             flush=True,
         )
 
@@ -554,22 +552,22 @@ def main():
     )
 
     print(
-        f"  Clients:      {args.num_clients}",
+        f"  Clients:      {config.data.num_clients}",
         flush=True,
     )
 
     print(
-        f"  Rounds:       {args.num_rounds}",
+        f"  Rounds:       {config.fl.num_rounds}",
         flush=True,
     )
 
     print(
-        f"  Adversaries:  {args.num_adversaries}",
+        f"  Adversaries:  {config.attack.num_adversaries}",
         flush=True,
     )
 
     print(
-        f"  Attack:       {args.attack_type}",
+        f"  Attack:       {config.attack.attack_type}",
         flush=True,
     )
 
@@ -584,8 +582,8 @@ def main():
     try:
         history = fl.simulation.start_simulation(
             client_fn=client_fn,
-            num_clients=args.num_clients,
-            config=fl.server.ServerConfig(num_rounds=args.num_rounds),
+            num_clients=config.data.num_clients,
+            config=fl.server.ServerConfig(num_rounds=config.fl.num_rounds),
             strategy=strategy,
             client_resources={
                 "num_cpus": 10,
@@ -601,7 +599,7 @@ def main():
         print(
             f"\nTraining complete in "
             f"{elapsed:.1f}s "
-            f"({elapsed / max(1, args.num_rounds):.1f}s/round)",
+            f"({elapsed / max(1, config.fl.num_rounds):.1f}s/round)",
             flush=True,
         )
 
@@ -640,36 +638,36 @@ def main():
     # ------------------------------------------------------------------------
 
     os.makedirs(
-        args.results_dir,
+        config.output.results_dir,
         exist_ok=True,
     )
 
-    if args.run_label:
-        filename = f"{args.run_label}.json"
+    if config.output.run_label:
+        filename = f"{config.output.run_label}.json"
 
     else:
         timestamp = time.strftime("%Y%m%d_%H%M%S")
 
         run_type = (
-            f"attack_{args.attack_type}_{args.num_adversaries}adv"
-            if args.num_adversaries > 0
+            f"attack_{config.attack.attack_type}_{config.attack.num_adversaries}adv"
+            if config.attack.num_adversaries > 0
             else "clean"
         )
 
         filename = f"history_{run_type}_{timestamp}.json"
 
     metrics_path = os.path.join(
-        args.results_dir,
+        config.output.results_dir,
         filename,
     )
 
     metrics = {
-        "seed": args.seed,
-        "run_label": args.run_label,
-        "num_clients": args.num_clients,
-        "num_rounds": args.num_rounds,
-        "num_adversaries": args.num_adversaries,
-        "attack_type": args.attack_type,
+        "seed": config.seed,
+        "run_label": config.output.run_label,
+        "num_clients": config.data.num_clients,
+        "num_rounds": config.fl.num_rounds,
+        "num_adversaries": config.attack.num_adversaries,
+        "attack_type": config.attack.attack_type,
         "losses_distributed": history.losses_distributed,
         "metrics_distributed": history.metrics_distributed,
         "metrics_centralized": history.metrics_centralized,
@@ -686,11 +684,19 @@ def main():
     )
 
     # ------------------------------------------------------------------------
+    # Provenance
+    # ------------------------------------------------------------------------
+
+    provenance_dir = os.path.dirname(metrics_path) if metrics_path else config.output.results_dir
+    save_provenance(config, provenance_dir, metrics=metrics)
+    print(f"Provenance saved to: {provenance_dir}/config.json", flush=True)
+
+    # ------------------------------------------------------------------------
     # Optional model checkpoint
     # ------------------------------------------------------------------------
 
-    if args.save_model:
-        save_dir = os.path.dirname(args.save_model)
+    if config.output.save_model:
+        save_dir = os.path.dirname(config.output.save_model)
 
         if save_dir:
             os.makedirs(
@@ -712,7 +718,7 @@ def main():
                 strategy.latest_aggregated_ndarrays,
             )
 
-            tmp_model = args.save_model + ".tmp"
+            tmp_model = config.output.save_model + ".tmp"
 
             torch.save(
                 final_model.state_dict(),
@@ -721,11 +727,11 @@ def main():
 
             os.replace(
                 tmp_model,
-                args.save_model,
+                config.output.save_model,
             )
 
             print(
-                f"Model checkpoint saved to: {args.save_model}",
+                f"Model checkpoint saved to: {config.output.save_model}",
                 flush=True,
             )
 
