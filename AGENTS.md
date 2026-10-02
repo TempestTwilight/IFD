@@ -115,9 +115,10 @@ results/                  # run outputs (gitignored)
 All experiment parameters live in `config/defaults.toml`. Entry points load config via:
 ```python
 from config import load_config, RNGManager, save_provenance
-config = load_config()                          # defaults only
-config = load_config(overrides={"seed": 99})    # with overrides
-rng = RNGManager(config.seed)                   # deterministic RNG streams
+
+config = load_config()  # defaults only
+config = load_config(overrides={"seed": 99})  # with overrides
+rng = RNGManager(config.seed)  # deterministic RNG streams
 ```
 No Hydra, no Pydantic — stdlib `dataclasses` + `tomllib` only.
 
