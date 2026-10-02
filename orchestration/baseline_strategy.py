@@ -60,7 +60,7 @@ class BaselineStrategy(FedAvg):
         client_param_ndarrays: list[list[np.ndarray]] = []
 
         for client_proxy, fit_res in results:
-            client_ids.append(str(client_proxy.cid))
+            client_ids.append(client_proxy.cid)
             client_param_ndarrays.append(parameters_to_ndarrays(fit_res.parameters))
 
         # ------------------------------------------------------------------

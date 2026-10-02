@@ -54,7 +54,7 @@ ENV UV_HTTP_TIMEOUT=1200
 # 1. Install PyTorch 2.13 built for CUDA 12.1 from the official PyTorch index.
 # 2. Sync the remaining locked dependencies from PyPI (no dev extras, project
 #    installed later once source is copied).
-RUN uv python install 3.14 && \
+RUN uv python install 3.12 && \
     uv venv /app/.venv && \
     uv pip install --python /app/.venv \
         --index-url https://download.pytorch.org/whl/cu121 \

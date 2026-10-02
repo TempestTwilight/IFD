@@ -115,7 +115,7 @@ class IFDClient(fl.client.NumPyClient):
         is_adversary: bool = False,
         attack_type: str | None = None,
     ):
-        self.cid = str(cid)
+        self.cid = cid
 
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -233,26 +233,26 @@ class IFDClient(fl.client.NumPyClient):
         if self.is_adversary and self.attack_type is not None:
             if self.attack_type == "sign_flip":
                 updated_params = [
-                    -p
+                    (2 * p_init - p_new)
                     if np.issubdtype(
-                        p.dtype,
+                        p_new.dtype,
                         np.floating,
                     )
-                    else p
-                    for p in updated_params
+                    else p_new
+                    for p_init, p_new in zip(parameters, updated_params)
                 ]
 
             elif self.attack_type == "model_replace":
                 scale = 10.0
 
                 updated_params = [
-                    p * scale
+                    (p_init + scale * (p_new - p_init))
                     if np.issubdtype(
-                        p.dtype,
+                        p_new.dtype,
                         np.floating,
                     )
-                    else p
-                    for p in updated_params
+                    else p_new
+                    for p_init, p_new in zip(parameters, updated_params)
                 ]
 
             elif self.attack_type == "gaussian_noise":

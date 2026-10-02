@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 """
 Seed sweep runner.
 
@@ -12,6 +13,8 @@ Features:
     - Process-group termination.
     - Continues after failed/timed-out seeds.
     - Sweep-level summary.
+    - Sweep-level data partitioning shared across all seeds.
+    - Fixed Dirichlet partition generated from the loader's training dataset.
 
 Usage:
     python run_seed_sweep.py
@@ -22,8 +25,11 @@ Optional environment variables:
     NROWS
     EXPERIMENT_TIMEOUT_MINUTES
     SEED_TIMEOUT_MINUTES
+    PARTITION_SEED (default: 43)
+    PARTITION_ALPHA (default: 0.5)
 """
 
+import json
 import os
 import signal
 import subprocess
@@ -31,13 +37,19 @@ import sys
 import time
 from datetime import UTC, datetime
 
+import numpy as np
+
+from config import RNGManager, load_config, save_provenance
+from data.loader import load_ieee_cis_data
+from data.partitioner import DirichletPartitioner
+
 # ============================================================================
 # Configuration
 # ============================================================================
 
 SEEDS = list(range(45, 56))
 
-BASE_RESULTS = "./results/Seed_Sweep2"
+BASE_RESULTS = "./results/Seed_Sweep"
 
 SWEEP_LOG = os.path.join(
     BASE_RESULTS,
@@ -47,11 +59,32 @@ SWEEP_LOG = os.path.join(
 SEED_TIMEOUT_MINUTES = float(
     os.environ.get(
         "SEED_TIMEOUT_MINUTES",
-        "3600",
+        "480",
     )
 )
 
 SEED_TIMEOUT_SECONDS = SEED_TIMEOUT_MINUTES * 60
+
+# Load base config (can be overridden via env)
+# ponytail: single load at module level, sweep reuses base config
+BASE_CONFIG = load_config(
+    overrides={
+        "seed": int(os.environ.get("PARTITION_SEED", "43")),
+        "data": {
+            "partition_alpha": float(os.environ.get("PARTITION_ALPHA", "0.5")),
+            "num_clients": int(os.environ.get("NUM_CLIENTS", "5")),
+            "nrows": int(os.environ.get("NROWS", "10000")),
+        },
+        "fl": {
+            "num_rounds": int(os.environ.get("NUM_ROUNDS", "20")),
+        },
+    }
+)
+
+PARTITION_FILE = os.path.join(
+    BASE_RESULTS,
+    "partition.json",
+)
 
 
 # ============================================================================
@@ -59,16 +92,14 @@ SEED_TIMEOUT_SECONDS = SEED_TIMEOUT_MINUTES * 60
 # ============================================================================
 
 
-def ts():
-
+def ts() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def log(
-    message,
+    message: str,
     fh=None,
-):
-
+) -> None:
     print(
         message,
         flush=True,
@@ -76,20 +107,201 @@ def log(
 
     if fh:
         fh.write(message + "\n")
-
         fh.flush()
 
 
-def seed_complete(
-    results_dir,
-):
-
+def seed_complete(results_dir: str) -> bool:
     return os.path.isfile(
         os.path.join(
             results_dir,
             "COMPLETE",
         )
     )
+
+
+# ============================================================================
+# Partition utilities
+# ============================================================================
+
+
+def create_partition(
+    partition_file: str,
+    sweep_log,
+) -> None:
+    """
+    Create and save one fixed partition for the entire seed sweep.
+
+    The partition is created from the training dataset returned by
+    load_ieee_cis_data(). The test dataset is never partitioned.
+    """
+
+    log(
+        "Creating sweep-level partition...",
+        sweep_log,
+    )
+
+    # Create RNG manager to derive partition seed
+    rng = RNGManager(BASE_CONFIG.seed)
+    partition_seed = rng.get_seed("partition")
+
+    log(
+        f"  Partition seed (derived): {partition_seed}",
+        sweep_log,
+    )
+
+    log(
+        f"  Partition alpha: {BASE_CONFIG.data.partition_alpha}",
+        sweep_log,
+    )
+
+    log(
+        f"  Num clients: {BASE_CONFIG.data.num_clients}",
+        sweep_log,
+    )
+
+    log(
+        f"  Loading training data (nrows={BASE_CONFIG.data.nrows})...",
+        sweep_log,
+    )
+
+    train_dataset, test_dataset = load_ieee_cis_data(
+        nrows=BASE_CONFIG.data.nrows,
+    )
+
+    y_train = train_dataset.y.numpy()
+
+    log(
+        f"  Training samples: {len(train_dataset)}",
+        sweep_log,
+    )
+
+    log(
+        f"  Test samples: {len(test_dataset)}",
+        sweep_log,
+    )
+
+    log(
+        f"  Input dimension: {train_dataset.x.shape[1]}",
+        sweep_log,
+    )
+
+    partitioner = DirichletPartitioner(
+        num_clients=BASE_CONFIG.data.num_clients,
+        alpha=BASE_CONFIG.data.partition_alpha,
+        seed=partition_seed,
+    )
+
+    client_indices, metadata = partitioner.partition(
+        y_train,
+    )
+
+    # Convert NumPy integer values to regular Python integers
+    # so that JSON serialization is reliable.
+    client_indices_json = {
+        client_id: [index for index in indices] for client_id, indices in client_indices.items()
+    }
+
+    partition_data = {
+        "client_indices": client_indices_json,
+        "metadata": metadata,
+        "config": {
+            "partition_seed": partition_seed,
+            "partition_alpha": BASE_CONFIG.data.partition_alpha,
+            "num_clients": BASE_CONFIG.data.num_clients,
+            "nrows": BASE_CONFIG.data.nrows,
+            "num_train_samples": len(train_dataset),
+            "num_test_samples": len(test_dataset),
+            "input_dim": train_dataset.x.shape[1],
+        },
+    }
+
+    with open(
+        partition_file,
+        "w",
+        encoding="utf-8",
+    ) as f:
+        json.dump(
+            partition_data,
+            f,
+            indent=2,
+        )
+
+    log(
+        f"  Saved partition to {partition_file}",
+        sweep_log,
+    )
+
+    log(
+        "  Samples per client: "
+        + str({client_id: len(indices) for client_id, indices in client_indices.items()}),
+        sweep_log,
+    )
+
+    # Useful for verifying the fraud distribution.
+    log(
+        "  Fraud samples per client: "
+        + str(
+            {
+                client_id: int(y_train[np.asarray(indices, dtype=int)].sum())
+                for client_id, indices in client_indices.items()
+            }
+        ),
+        sweep_log,
+    )
+
+
+def load_partition(
+    partition_file: str,
+) -> dict:
+    """Load a previously created sweep-level partition."""
+
+    with open(
+        partition_file,
+        encoding="utf-8",
+    ) as f:
+        return json.load(f)
+
+
+def validate_partition(
+    partition_data: dict,
+) -> None:
+    """
+    Verify that an existing partition matches the current configuration.
+
+    This prevents accidentally reusing a partition generated with
+    different clients, alpha, seed, or dataset size.
+    """
+
+    config = partition_data.get("config", {})
+
+    expected = {
+        "partition_alpha": BASE_CONFIG.data.partition_alpha,
+        "num_clients": BASE_CONFIG.data.num_clients,
+        "nrows": BASE_CONFIG.data.nrows,
+    }
+
+    for key, expected_value in expected.items():
+        actual_value = config.get(key)
+
+        if actual_value != expected_value:
+            raise ValueError(
+                f"Existing partition mismatch for '{key}': "
+                f"stored={actual_value!r}, "
+                f"expected={expected_value!r}. "
+                "Delete partition.json or restore the original configuration."
+            )
+
+    client_indices = partition_data.get(
+        "client_indices",
+        {},
+    )
+
+    if len(client_indices) != BASE_CONFIG.data.num_clients:
+        raise ValueError(
+            "Existing partition contains "
+            f"{len(client_indices)} clients, "
+            f"but num_clients={BASE_CONFIG.data.num_clients}."
+        )
 
 
 # ============================================================================
@@ -100,14 +312,12 @@ def seed_complete(
 def terminate_process_tree(
     process,
     seed_log,
-):
-
+) -> None:
     if process.poll() is not None:
         return
 
     try:
         seed_log.write(f"\n[{ts()}] Terminating seed process tree.\n")
-
         seed_log.flush()
 
         if os.name == "posix":
@@ -115,16 +325,16 @@ def terminate_process_tree(
                 process.pid,
                 signal.SIGTERM,
             )
-
         else:
             process.terminate()
 
         try:
-            process.wait(timeout=15)
+            process.wait(
+                timeout=15,
+            )
 
         except subprocess.TimeoutExpired:
             seed_log.write(f"[{ts()}] Forcing seed process termination.\n")
-
             seed_log.flush()
 
             if os.name == "posix":
@@ -132,18 +342,18 @@ def terminate_process_tree(
                     process.pid,
                     signal.SIGKILL,
                 )
-
             else:
                 process.kill()
 
-            process.wait(timeout=15)
+            process.wait(
+                timeout=15,
+            )
 
     except ProcessLookupError:
         pass
 
     except Exception as exc:
         seed_log.write(f"[{ts()}] Termination error: {type(exc).__name__}: {exc}\n")
-
         seed_log.flush()
 
 
@@ -153,9 +363,9 @@ def terminate_process_tree(
 
 
 def run_seed(
-    seed,
+    seed: int,
     sweep_log,
-):
+) -> str:
 
     results_dir = os.path.join(
         BASE_RESULTS,
@@ -180,6 +390,16 @@ def run_seed(
         )
 
         return message
+
+    # ------------------------------------------------------------------------
+    # Create config for this seed
+    # ------------------------------------------------------------------------
+
+    seed_config = load_config(overrides={"seed": seed})
+    rng = RNGManager(seed_config.seed)
+
+    # Save provenance before run
+    save_provenance(seed_config, results_dir)
 
     # ------------------------------------------------------------------------
     # Per-seed log
@@ -213,18 +433,40 @@ def run_seed(
             "a",
             encoding="utf-8",
         ) as seed_log:
+            partition_seed_derived = rng.get_seed("partition")
+
             seed_log.write(
-                "\n" + "=" * 80 + "\n" + f"SEED {seed} STARTED {ts()}\n" + f"TIMEOUT: "
-                f"{SEED_TIMEOUT_MINUTES:.1f} min\n" + "=" * 80 + "\n"
+                "\n"
+                + "=" * 80
+                + "\n"
+                + f"SEED {seed} STARTED {ts()}\n"
+                + f"TIMEOUT: {SEED_TIMEOUT_MINUTES:.1f} min\n"
+                + f"PARTITION FILE: {PARTITION_FILE}\n"
+                + f"PARTITION SEED (derived): {partition_seed_derived}\n"
+                + f"PARTITION ALPHA: {BASE_CONFIG.data.partition_alpha}\n"
+                + "=" * 80
+                + "\n"
             )
 
             seed_log.flush()
 
             env = os.environ.copy()
 
+            # Training/output configuration.
             env["RESULTS_DIR"] = results_dir
-
             env["SEED"] = str(seed)
+
+            # ----------------------------------------------------------------
+            # Critical:
+            # Explicitly tell run_experiments.py to use the fixed partition.
+            # ----------------------------------------------------------------
+            env["PARTITION_FILE"] = PARTITION_FILE
+
+            # Also expose partition configuration explicitly.
+            env["PARTITION_SEED"] = str(partition_seed_derived)
+            env["PARTITION_ALPHA"] = str(BASE_CONFIG.data.partition_alpha)
+            env["NUM_CLIENTS"] = str(BASE_CONFIG.data.num_clients)
+            env["NROWS"] = str(BASE_CONFIG.data.nrows)
 
             cmd = [
                 sys.executable,
@@ -240,7 +482,6 @@ def run_seed(
 
             if os.name == "posix":
                 kwargs["start_new_session"] = True
-
             else:
                 kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
 
@@ -250,7 +491,9 @@ def run_seed(
             )
 
             try:
-                return_code = process.wait(timeout=SEED_TIMEOUT_SECONDS)
+                return_code = process.wait(
+                    timeout=SEED_TIMEOUT_SECONDS,
+                )
 
             except subprocess.TimeoutExpired:
                 elapsed = time.time() - start
@@ -258,7 +501,6 @@ def run_seed(
                 message = f"Seed {seed:3d}: TIMEOUT — {elapsed / 60:.1f} min"
 
                 seed_log.write(f"\n[{ts()}] {message}\n")
-
                 seed_log.flush()
 
                 terminate_process_tree(
@@ -298,7 +540,6 @@ def run_seed(
                 )
 
             seed_log.write(f"\n[{ts()}] {message}\n")
-
             seed_log.flush()
 
             log(
@@ -326,7 +567,7 @@ def run_seed(
 # ============================================================================
 
 
-def main():
+def main() -> int:
 
     os.makedirs(
         BASE_RESULTS,
@@ -361,9 +602,67 @@ def main():
         )
 
         log(
+            f"Base seed (for partition derivation): {BASE_CONFIG.seed}",
+            sweep_log,
+        )
+
+        log(
+            f"Partition alpha: {BASE_CONFIG.data.partition_alpha}",
+            sweep_log,
+        )
+
+        log(
+            f"Num clients: {BASE_CONFIG.data.num_clients}",
+            sweep_log,
+        )
+
+        log(
+            f"NROWS: {BASE_CONFIG.data.nrows}",
+            sweep_log,
+        )
+
+        log(
             "=" * 80,
             sweep_log,
         )
+
+        # --------------------------------------------------------------------
+        # Create or validate sweep-level partition.
+        # --------------------------------------------------------------------
+
+        if not os.path.exists(PARTITION_FILE):
+            create_partition(
+                PARTITION_FILE,
+                sweep_log,
+            )
+
+        else:
+            partition_data = load_partition(
+                PARTITION_FILE,
+            )
+
+            validate_partition(
+                partition_data,
+            )
+
+            log(
+                f"Found existing partition: {PARTITION_FILE}",
+                sweep_log,
+            )
+
+            log(
+                f"  Config: {partition_data['config']}",
+                sweep_log,
+            )
+
+        log(
+            "=" * 80,
+            sweep_log,
+        )
+
+        # --------------------------------------------------------------------
+        # Run every training seed using the SAME partition.
+        # --------------------------------------------------------------------
 
         for seed in SEEDS:
             summary = run_seed(
@@ -371,10 +670,12 @@ def main():
                 sweep_log,
             )
 
-            summaries.append(summary)
+            summaries.append(
+                summary,
+            )
 
         # --------------------------------------------------------------------
-        # Final sweep summary
+        # Final sweep summary.
         # --------------------------------------------------------------------
 
         log(
@@ -438,6 +739,7 @@ def main():
 # ============================================================================
 # Entry point
 # ============================================================================
+
 
 if __name__ == "__main__":
     try:
