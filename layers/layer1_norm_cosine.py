@@ -318,7 +318,11 @@ def _test_edge_cases():
     identical = torch.ones(5, 50)
     a1, c1 = layer1.score(identical)
     assert not torch.isnan(a1).any() and not torch.isnan(c1).any()
-    assert torch.allclose(a1, torch.ones_like(a1)), "Identical inputs should all be typical (z=0)"
+    expected = 1.0 - torch.sigmoid(torch.tensor(-layer1.z_thresh))  # z = 0 for everyone
+    assert torch.allclose(a1, expected.expand_as(a1), atol=1e-6), (
+        f"Identical inputs should all score {expected.item():.4f} (z=0), got {a1}"
+    )
+    assert (a1 >= 0.5).all(), "Identical inputs must all be accepted"
     print("  PASS")
 
     # List input
